@@ -25,7 +25,7 @@ python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.1
 Latest release:
 
 ```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.2.0"
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.3.0"
 ```
 
 ```bash
@@ -63,7 +63,6 @@ exp.model(
     )
 )
 
-@exp.task
 async def answer(row, model, ctx):
     response = await ctx.responses.create(
         model=model.model,
@@ -72,6 +71,7 @@ async def answer(row, model, ctx):
     )
     return response.output_text
 
+exp.task = answer
 exp.eval(
     "contains_expected",
     Contains(container=text(), expected=row("expected"), case_sensitive=False),
@@ -106,7 +106,6 @@ exp = Experiment(
 
 exp.model(ModelConfig(key="gpt5_low", model="gpt-5", params={"reasoning": {"effort": "low"}}))
 
-@exp.task
 async def extract(row, model, ctx):
     response = await ctx.responses.create(
         model=model.model,
@@ -131,6 +130,7 @@ async def extract(row, model, ctx):
     )
     return TaskOutput(text=response.output_text, value=json.loads(response.output_text))
 
+exp.task = extract
 exp.eval("has_name", JsonPathExists(value=out(), path="name"))
 
 def age_in_range(row, model, output, ctx):
@@ -162,7 +162,6 @@ exp.models([
     ModelConfig(key="gpt5_high", model="gpt-5", params={"reasoning": {"effort": "high"}}),
 ])
 
-@exp.task
 async def solve(row, model, ctx):
     response = await ctx.responses.create(
         model=model.model,
@@ -171,6 +170,7 @@ async def solve(row, model, ctx):
     )
     return response.output_text
 
+exp.task = solve
 exp.eval("exact_match", Equal(actual=text(), expected=row("answer")))
 
 if __name__ == "__main__":
@@ -211,9 +211,9 @@ Selectors:
 - `out()` reads the full `TaskOutput.value`.
 - `text(cast=None)` reads `TaskOutput.text`.
 
-## Scoring Shapes
+## Custom Eval Functions
 
-Custom eval functions can be registered directly or with decorator syntax. They can return booleans, numbers, dictionaries, `EvalResult` objects, or lists of `EvalResult` objects.
+Custom eval functions are registered with `exp.eval("key", evaluator)`. They can return booleans, numbers, dictionaries, `EvalResult` objects, or lists of `EvalResult` objects.
 
 ```python
 from evals import EvalResult
@@ -232,13 +232,45 @@ def quality_bundle(row, model, output, ctx):
 
 exp.eval("quality_bundle", quality_bundle)
 
-@exp.eval("manual_score")
 def manual_score(row, model, output, ctx):
     return EvalResult(
         score=0.8,
         description="Hand-authored score with metadata",
         metadata={"rubric": "v1"},
     )
+
+exp.eval("manual_score", manual_score)
+```
+
+## Task Callables
+
+Assign a single task callable to `exp.task`. It receives `(row, model, ctx)` and may be sync or async.
+
+```python
+async def solve(row, model, ctx):
+    response = await ctx.responses.create(
+        model=model.model,
+        **model.params,
+        input=row["problem"],
+    )
+    return response.output_text
+
+exp.task = solve
+```
+
+Callable objects work too:
+
+```python
+class Solve:
+    async def __call__(self, row, model, ctx):
+        response = await ctx.responses.create(
+            model=model.model,
+            **model.params,
+            input=row["problem"],
+        )
+        return response.output_text
+
+exp.task = Solve()
 ```
 
 Each run writes local artifacts under `output_dir/name`:
@@ -295,8 +327,8 @@ Release checklist:
 ```bash
 python3 -m pytest
 git add pyproject.toml CHANGELOG.md README.md
-git commit -m "Release v0.2.0"
-git tag -a v0.2.0 -m "v0.2.0"
+git commit -m "Release v0.3.0"
+git tag -a v0.3.0 -m "v0.3.0"
 git push
-git push origin v0.2.0
+git push origin v0.3.0
 ```

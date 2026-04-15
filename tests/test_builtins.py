@@ -105,7 +105,7 @@ def test_selectors_handle_nested_paths_casts_defaults_and_failures():
     assert "cast" in cast_failed.comment
 
 
-def test_experiment_eval_registers_direct_custom_functions_and_decorators(tmp_path, fake_client):
+def test_experiment_eval_registers_direct_custom_functions_and_builtins(tmp_path, fake_client):
     exp = Experiment(
         name="registration",
         dataset=write_dataset(tmp_path),
@@ -115,23 +115,20 @@ def test_experiment_eval_registers_direct_custom_functions_and_decorators(tmp_pa
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    @exp.task
     async def task(dataset_row, model, ctx):
         return TaskOutput(text="hello", value={"score": 0.5})
 
     def direct_custom(dataset_row, model, output, ctx):
         return True
 
+    exp.task = task
     exp.eval("direct_custom", direct_custom)
     exp.eval("builtin_equal", Equal(actual=out("score"), expected=row("score", cast=float)))
-
-    @exp.eval("decorator_custom")
-    def decorator_custom(dataset_row, model, output, ctx):
-        return True
+    exp.eval("inline_custom", lambda dataset_row, model, output, ctx: True)
 
     records = exp.run()
     keys = {result.key for result in records[0].evals}
-    assert keys == {"direct_custom", "builtin_equal", "decorator_custom"}
+    assert keys == {"direct_custom", "builtin_equal", "inline_custom"}
 
 
 def test_duplicate_eval_keys_are_rejected_across_registration_styles(tmp_path):
@@ -139,8 +136,6 @@ def test_duplicate_eval_keys_are_rejected_across_registration_styles(tmp_path):
     exp.eval("same", Equal(actual=1, expected=1))
     with pytest.raises(ValueError, match="duplicate eval key"):
         exp.eval("same", Equal(actual=1, expected=1))
-    with pytest.raises(ValueError, match="duplicate eval key"):
-        exp.eval("same")
 
 
 def test_registered_key_overrides_single_eval_result_key(tmp_path, fake_client):
@@ -153,10 +148,10 @@ def test_registered_key_overrides_single_eval_result_key(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    @exp.task
     async def task(dataset_row, model, ctx):
         return "ok"
 
+    exp.task = task
     exp.eval("registered", lambda dataset_row, model, output, ctx: EvalResult(key="other", score=True))
 
     records = exp.run()
@@ -173,10 +168,10 @@ def test_dict_and_list_eval_returns_keep_multi_score_behavior(tmp_path, fake_cli
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    @exp.task
     async def task(dataset_row, model, ctx):
         return "ok"
 
+    exp.task = task
     exp.eval("dict_bundle", lambda dataset_row, model, output, ctx: {"a": True, "b": 0.5})
     exp.eval(
         "list_bundle",
@@ -201,10 +196,10 @@ def test_builtin_scores_are_persisted_to_csv_files(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    @exp.task
     async def task(dataset_row, model, ctx):
         return TaskOutput(text="hello world", value={"score": 0.5})
 
+    exp.task = task
     exp.eval("score_equal", Equal(actual=out("score"), expected=row("score", cast=float)))
     records = exp.run()
     assert records[0].evals[0].score is True

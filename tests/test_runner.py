@@ -37,7 +37,6 @@ def make_experiment(tmp_path, fake_client, rows=None, **kwargs):
         ]
     )
 
-    @exp.task
     async def task(row, model, ctx):
         response = await ctx.responses.create(
             model=model.model,
@@ -46,13 +45,15 @@ def make_experiment(tmp_path, fake_client, rows=None, **kwargs):
         )
         return response.output_text
 
-    @exp.eval("contains_expected", description="Expected appears")
     def contains_expected(row, model, output, ctx):
         return row["expected"] in output.text
 
-    @exp.eval("brevity")
     async def brevity(row, model, output, ctx):
         return EvalResult(score=min(1.0, 100 / max(len(output.text), 1)))
+
+    exp.task = task
+    exp.eval("contains_expected", contains_expected, description="Expected appears")
+    exp.eval("brevity", brevity)
 
     return exp
 
@@ -126,13 +127,14 @@ def test_eval_dict_return_is_supported(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    @exp.task
     async def task(row, model, ctx):
         return "alpha"
 
-    @exp.eval("bundle")
     def bundle(row, model, output, ctx):
         return {"correct": True, "score": 0.5}
+
+    exp.task = task
+    exp.eval("bundle", bundle)
 
     records = exp.run()
     assert {result.key for result in records[0].evals} == {"correct", "score"}
@@ -151,16 +153,60 @@ def test_eval_errors_are_recorded(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    @exp.task
     async def task(row, model, ctx):
         return "alpha"
 
-    @exp.eval("broken")
     def broken(row, model, output, ctx):
         raise RuntimeError("nope")
+
+    exp.task = task
+    exp.eval("broken", broken)
 
     records = exp.run()
     assert records[0].status == "success"
     assert records[0].evals[0].key == "broken"
     assert records[0].evals[0].error is not None
 
+
+def test_sync_task_callable_is_supported(tmp_path, fake_client):
+    exp = Experiment(
+        name="sync_task",
+        dataset=write_dataset(
+            tmp_path,
+            [{"id": "a", "question": "alpha", "expected": "alpha"}],
+        ),
+        output_dir=tmp_path / "runs",
+        openai_client=fake_client,
+        display="quiet",
+    )
+    exp.model(ModelConfig(key="m1", model="gpt-test"))
+    exp.task = lambda row, model, ctx: "alpha"
+    exp.eval("correct", lambda row, model, output, ctx: output.text == row["expected"])
+
+    records = exp.run()
+    assert records[0].status == "success"
+    assert records[0].evals[0].score is True
+
+
+def test_task_object_is_supported(tmp_path, fake_client):
+    class Task:
+        async def __call__(self, row, model, ctx):
+            return "alpha"
+
+    exp = Experiment(
+        name="task_object",
+        dataset=write_dataset(
+            tmp_path,
+            [{"id": "a", "question": "alpha", "expected": "alpha"}],
+        ),
+        output_dir=tmp_path / "runs",
+        openai_client=fake_client,
+        display="quiet",
+    )
+    exp.model(ModelConfig(key="m1", model="gpt-test"))
+    exp.task = Task()
+    exp.eval("correct", lambda row, model, output, ctx: output.text == row["expected"])
+
+    records = exp.run()
+    assert records[0].status == "success"
+    assert records[0].evals[0].score is True

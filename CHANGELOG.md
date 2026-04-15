@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.3.0] - 2026-04-15
+
+### Changed
+
+- Replaced task decorators with direct task assignment via `exp.task = callable`.
+- Removed eval decorator registration in favor of `exp.eval("key", evaluator)`.
+- Task callables may now be sync or async, including callable task objects.
+
 ## [0.2.0] - 2026-04-15
 
 ### Added

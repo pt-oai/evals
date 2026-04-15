@@ -19,7 +19,6 @@ exp.model(
 )
 
 
-@exp.task
 async def answer(row, model, ctx):
     response = await ctx.responses.create(
         model=model.model,
@@ -29,6 +28,7 @@ async def answer(row, model, ctx):
     return response.output_text
 
 
+exp.task = answer
 exp.eval(
     "contains_expected",
     Contains(container=text(), expected=row("expected"), case_sensitive=False),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from evals.models import ModelConfig
 from evals.runner import Runner
 
-TaskFn = Callable[..., Awaitable[Any]]
+TaskFn = Callable[..., Any]
 EvalFn = Callable[..., Any]
 
 
@@ -77,8 +77,14 @@ class Experiment:
         return list(self._evals)
 
     @property
-    def task_fn(self) -> TaskFn | None:
+    def task(self) -> TaskFn | None:
         return self._task
+
+    @task.setter
+    def task(self, func: TaskFn | None) -> None:
+        if func is not None and not callable(func):
+            raise TypeError("task must be callable")
+        self._task = func
 
     def model(self, config: ModelConfig) -> ModelConfig:
         if any(existing.key == config.key for existing in self._models):
@@ -92,31 +98,19 @@ class Experiment:
             registered.append(self.model(config))
         return registered
 
-    def task(self, func: TaskFn) -> TaskFn:
-        if not inspect.iscoroutinefunction(func):
-            raise TypeError("@exp.task requires an async function")
-        self._task = func
-        return func
-
     def eval(
         self,
         key: str,
-        evaluator: EvalFn | None = None,
+        evaluator: EvalFn,
         *,
         description: str | None = None,
-    ) -> Callable[[EvalFn], EvalFn] | EvalFn:
+    ) -> EvalFn:
         if any(existing.key == key for existing in self._evals):
             raise ValueError(f"duplicate eval key: {key}")
-
-        if evaluator is not None:
-            self._evals.append(EvalDefinition(key=key, func=evaluator, description=description))
-            return evaluator
-
-        def decorator(func: EvalFn) -> EvalFn:
-            self._evals.append(EvalDefinition(key=key, func=func, description=description))
-            return func
-
-        return decorator
+        if not callable(evaluator):
+            raise TypeError("evaluator must be callable")
+        self._evals.append(EvalDefinition(key=key, func=evaluator, description=description))
+        return evaluator
 
     def run(self) -> list[Any]:
         return asyncio.run(self.run_async())
@@ -142,7 +136,7 @@ class Experiment:
         if not self._models:
             raise ValueError("at least one model must be registered")
         if self._task is None:
-            raise ValueError("a task function must be registered with @exp.task")
+            raise ValueError("a task callable must be assigned to exp.task")
 
     def run_dir(self) -> Path:
         return self.output_dir / self.name

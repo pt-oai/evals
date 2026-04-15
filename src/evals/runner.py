@@ -132,7 +132,7 @@ class Runner:
         client: Any,
     ) -> ExecutionRecord:
         exp = self.experiment
-        task = exp.task_fn
+        task = exp.task
         if task is None:
             raise ValueError("missing task function")
 
@@ -153,7 +153,9 @@ class Runner:
         status = "success"
 
         try:
-            task_result = await task(row.data, model, ctx)
+            task_result = task(row.data, model, ctx)
+            if inspect.isawaitable(task_result):
+                task_result = await task_result
             output = TaskOutput.normalize(task_result)
             evals = await self._run_evals(row, model, output, ctx)
         except Exception as exc:

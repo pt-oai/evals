@@ -21,15 +21,16 @@ def test_registers_task_model_and_eval(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    @exp.task
     async def task(row, model, ctx):
         return "ok"
 
-    @exp.eval("always")
     def always(row, model, output, ctx):
         return True
 
-    assert exp.task_fn is task
+    exp.task = task
+    exp.eval("always", always)
+
+    assert exp.task is task
     assert exp.registered_models[0].key == "m1"
     assert exp.registered_evals[0].key == "always"
 
@@ -41,14 +42,18 @@ def test_rejects_duplicate_model_keys(tmp_path):
         exp.model(ModelConfig(key="m1", model="gpt-test"))
 
 
-def test_task_must_be_async(tmp_path):
+def test_task_must_be_callable(tmp_path):
     exp = Experiment(name="demo", dataset=write_dataset(tmp_path), output_dir=tmp_path)
 
-    with pytest.raises(TypeError, match="async"):
+    with pytest.raises(TypeError, match="callable"):
+        exp.task = "not callable"
 
-        @exp.task
-        def task(row, model, ctx):
-            return "ok"
+
+def test_eval_requires_callable(tmp_path):
+    exp = Experiment(name="demo", dataset=write_dataset(tmp_path), output_dir=tmp_path)
+
+    with pytest.raises(TypeError, match="callable"):
+        exp.eval("bad", "not callable")
 
 
 def test_validate_requires_task_and_model(tmp_path):
@@ -57,6 +62,5 @@ def test_validate_requires_task_and_model(tmp_path):
         exp.validate()
 
     exp.model(ModelConfig(key="m1", model="gpt-test"))
-    with pytest.raises(ValueError, match="task function"):
+    with pytest.raises(ValueError, match="task callable"):
         exp.validate()
-
