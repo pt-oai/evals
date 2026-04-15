@@ -22,6 +22,12 @@ To pin a specific release:
 python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.1.0"
 ```
 
+Latest release:
+
+```bash
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.2.0"
+```
+
 ```bash
 python examples/qa_smoke.py
 ```
@@ -39,7 +45,7 @@ row-2,Name the color of a clear daytime sky.,blue
 Create an experiment file:
 
 ```python
-from evals import EvalResult, Experiment, ModelConfig
+from evals import Contains, Experiment, LengthBetween, ModelConfig, row, text
 
 exp = Experiment(
     name="qa_smoke",
@@ -66,13 +72,12 @@ async def answer(row, model, ctx):
     )
     return response.output_text
 
-@exp.eval("contains_expected", description="Expected answer appears")
-def contains_expected(row, model, output, ctx):
-    return row["expected"].lower() in output.text.lower()
-
-@exp.eval("brevity")
-def brevity(row, model, output, ctx):
-    return EvalResult(score=min(1.0, 200 / max(len(output.text), 1)))
+exp.eval(
+    "contains_expected",
+    Contains(container=text(), expected=row("expected"), case_sensitive=False),
+    description="Expected answer appears",
+)
+exp.eval("brevity", LengthBetween(value=text(), max_len=200))
 
 if __name__ == "__main__":
     exp.run()
@@ -91,7 +96,7 @@ Responses API structured output works through the same wrapped `ctx.responses.cr
 ```python
 import json
 
-from evals import Experiment, ModelConfig, TaskOutput
+from evals import Experiment, JsonPathExists, ModelConfig, TaskOutput, out
 
 exp = Experiment(
     name="extract_people",
@@ -126,13 +131,12 @@ async def extract(row, model, ctx):
     )
     return TaskOutput(text=response.output_text, value=json.loads(response.output_text))
 
-@exp.eval("has_name")
-def has_name(row, model, output, ctx):
-    return bool(output.value["name"])
+exp.eval("has_name", JsonPathExists(value=out(), path="name"))
 
-@exp.eval("age_in_range")
 def age_in_range(row, model, output, ctx):
     return 0 <= output.value["age"] <= 130
+
+exp.eval("age_in_range", age_in_range)
 
 if __name__ == "__main__":
     exp.run()
@@ -143,7 +147,7 @@ if __name__ == "__main__":
 Register as many model configs as you want. The runner executes every dataset row against every model.
 
 ```python
-from evals import Experiment, ModelConfig
+from evals import Equal, Experiment, ModelConfig, row, text
 
 exp = Experiment(
     name="reasoning_compare",
@@ -167,32 +171,66 @@ async def solve(row, model, ctx):
     )
     return response.output_text
 
-@exp.eval("exact_match")
-def exact_match(row, model, output, ctx):
-    return output.text.strip() == row["answer"].strip()
+exp.eval("exact_match", Equal(actual=text(), expected=row("answer")))
 
 if __name__ == "__main__":
     exp.run()
 ```
 
+## Built-In Evaluators
+
+Built-ins are registered directly with `exp.eval("key", evaluator)`. The key appears once at registration time.
+
+```python
+from evals import ApproxEqual, Contains, Equal, JsonPathExists, RegexMatch, row, out, text
+
+exp.eval("exact_answer", Equal(actual=text(), expected=row("expected")))
+exp.eval("score_equal", Equal(actual=out("score"), expected=row("score", cast=float)))
+exp.eval("price_close", ApproxEqual(actual=out("price"), expected=row("price", cast=float), abs_tol=0.01))
+exp.eval("mentions_term", Contains(container=text(), expected=row("term"), case_sensitive=False))
+exp.eval("has_citation", RegexMatch(value=text(), pattern=r"\[\d+\]"))
+exp.eval("has_explanation", JsonPathExists(value=out(), path="explanation"))
+```
+
+Available built-ins:
+
+- `Equal(actual, expected)`
+- `NotEqual(actual, expected)`
+- `ApproxEqual(actual, expected, abs_tol=1e-6, rel_tol=1e-9)`
+- `Contains(container, expected, case_sensitive=True)`
+- `RegexMatch(value, pattern, flags=0)`
+- `NonEmpty(value)`
+- `LengthBetween(value, min_len=None, max_len=None)`
+- `JsonPathExists(value, path)`
+- `JsonPathEqual(value, path, expected)`
+
+Selectors:
+
+- `row("column", cast=None, default=...)` reads from the CSV row.
+- `out("path", cast=None, default=...)` reads from `TaskOutput.value`.
+- `out()` reads the full `TaskOutput.value`.
+- `text(cast=None)` reads `TaskOutput.text`.
+
 ## Scoring Shapes
 
-Eval functions can return booleans, numbers, dictionaries, or `EvalResult` objects.
+Custom eval functions can be registered directly or with decorator syntax. They can return booleans, numbers, dictionaries, `EvalResult` objects, or lists of `EvalResult` objects.
 
 ```python
 from evals import EvalResult
 
-@exp.eval("contains_expected")
 def contains_expected(row, model, output, ctx):
     return row["expected"].lower() in output.text.lower()
 
-@exp.eval("quality_bundle")
+exp.eval("contains_expected", contains_expected)
+
 def quality_bundle(row, model, output, ctx):
     return {
         "non_empty": bool(output.text.strip()),
         "short_enough": len(output.text) < 500,
         "length_score": min(1.0, 200 / max(len(output.text), 1)),
     }
+
+exp.eval("quality_bundle", quality_bundle)
 
 @exp.eval("manual_score")
 def manual_score(row, model, output, ctx):
@@ -257,8 +295,8 @@ Release checklist:
 ```bash
 python3 -m pytest
 git add pyproject.toml CHANGELOG.md README.md
-git commit -m "Release v0.1.0"
-git tag -a v0.1.0 -m "v0.1.0"
+git commit -m "Release v0.2.0"
+git tag -a v0.2.0 -m "v0.2.0"
 git push
-git push origin v0.1.0
+git push origin v0.2.0
 ```

@@ -1,3 +1,17 @@
+from evals.builtins import (
+    ApproxEqual,
+    Contains,
+    Equal,
+    JsonPathEqual,
+    JsonPathExists,
+    LengthBetween,
+    NonEmpty,
+    NotEqual,
+    RegexMatch,
+    out,
+    row,
+    text,
+)
 from evals.experiment import Experiment
 from evals.models import (
     ErrorRecord,
@@ -10,13 +24,24 @@ from evals.models import (
 )
 
 __all__ = [
+    "ApproxEqual",
+    "Contains",
     "ErrorRecord",
     "EvalResult",
+    "Equal",
     "ExecutionRecord",
     "Experiment",
     "GenerationRecord",
+    "JsonPathEqual",
+    "JsonPathExists",
+    "LengthBetween",
     "ModelConfig",
+    "NonEmpty",
+    "NotEqual",
+    "RegexMatch",
     "TaskOutput",
     "TokenUsage",
+    "out",
+    "row",
+    "text",
 ]
-

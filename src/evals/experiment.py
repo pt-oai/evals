@@ -98,9 +98,19 @@ class Experiment:
         self._task = func
         return func
 
-    def eval(self, key: str, *, description: str | None = None) -> Callable[[EvalFn], EvalFn]:
+    def eval(
+        self,
+        key: str,
+        evaluator: EvalFn | None = None,
+        *,
+        description: str | None = None,
+    ) -> Callable[[EvalFn], EvalFn] | EvalFn:
         if any(existing.key == key for existing in self._evals):
             raise ValueError(f"duplicate eval key: {key}")
+
+        if evaluator is not None:
+            self._evals.append(EvalDefinition(key=key, func=evaluator, description=description))
+            return evaluator
 
         def decorator(func: EvalFn) -> EvalFn:
             self._evals.append(EvalDefinition(key=key, func=func, description=description))
@@ -142,4 +152,3 @@ class Experiment:
         if path.is_absolute():
             return path
         return (self._base_dir / path).resolve()
-

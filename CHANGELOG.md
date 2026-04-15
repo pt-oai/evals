@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.2.0] - 2026-04-15
+
+### Added
+
+- Unified `exp.eval("key", evaluator)` registration for custom functions and built-in evaluators.
+- Built-in deterministic evaluators for equality, approximate equality, containment, regex, non-empty values, length bounds, and JSON path checks.
+- Selector helpers: `row(...)`, `out(...)`, and `text(...)`.
+
 ## [0.1.0] - 2026-04-15
 
 ### Added
@@ -19,4 +27,3 @@ versions may include API changes as the experiment framework settles.
 - Local artifacts: `manifest.json`, `results.jsonl`, `results.csv`, and `scores.csv`.
 - Rich terminal progress and summary tables.
 - Example QA experiment and pytest coverage.
-

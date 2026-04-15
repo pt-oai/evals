@@ -1,4 +1,4 @@
-from evals import EvalResult, Experiment, ModelConfig
+from evals import Contains, Experiment, LengthBetween, ModelConfig, row, text
 
 
 exp = Experiment(
@@ -29,16 +29,13 @@ async def answer(row, model, ctx):
     return response.output_text
 
 
-@exp.eval("contains_expected", description="Expected answer appears")
-def contains_expected(row, model, output, ctx):
-    return row["expected"].lower() in output.text.lower()
-
-
-@exp.eval("brevity")
-def brevity(row, model, output, ctx):
-    return EvalResult(score=min(1.0, 200 / max(len(output.text), 1)))
+exp.eval(
+    "contains_expected",
+    Contains(container=text(), expected=row("expected"), case_sensitive=False),
+    description="Expected answer appears",
+)
+exp.eval("brevity", LengthBetween(value=text(), max_len=200))
 
 
 if __name__ == "__main__":
     exp.run()
-

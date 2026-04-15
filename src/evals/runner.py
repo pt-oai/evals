@@ -287,7 +287,7 @@ def normalize_eval_return(value: Any, definition: "EvalDefinition") -> list[Eval
     if value is None:
         return []
     if isinstance(value, EvalResult):
-        return [value.with_defaults(definition.key, definition.description)]
+        return [apply_registered_key(value, definition.key, definition.description)]
     if isinstance(value, (bool, int, float)):
         return [
             EvalResult(score=value).with_defaults(definition.key, definition.description)
@@ -309,3 +309,18 @@ def normalize_eval_return(value: Any, definition: "EvalDefinition") -> list[Eval
     raise TypeError(
         "eval must return None, bool, int, float, dict, EvalResult, or list[EvalResult]"
     )
+
+
+def apply_registered_key(
+    result: EvalResult,
+    key: str,
+    description: str | None = None,
+) -> EvalResult:
+    data = result.model_dump()
+    data["key"] = key
+    data["description"] = data["description"] or description
+    if data["data_type"] is None and data["score"] is not None:
+        from evals.models import infer_score_type
+
+        data["data_type"] = infer_score_type(data["score"])
+    return EvalResult(**data)
