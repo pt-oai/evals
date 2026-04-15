@@ -1,6 +1,6 @@
 "use client";
 
-import { flexRender, type Table } from "@tanstack/react-table";
+import { flexRender, type Cell, type Row, type Table } from "@tanstack/react-table";
 import { ReactNode } from "react";
 
 import { statusLabel } from "../lib/evals";
@@ -114,16 +114,26 @@ export function Toggle({
   );
 }
 
-export function DataTable<T>({ table, empty }: { table: Table<T>; empty: string }) {
+export function DataTable<T>({
+  table,
+  empty,
+  getCellRowSpan,
+  getRowClassName,
+}: {
+  table: Table<T>;
+  empty: string;
+  getCellRowSpan?: (cell: Cell<T, unknown>) => number;
+  getRowClassName?: (row: Row<T>) => string;
+}) {
   return (
     <div className="overflow-hidden rounded-md border border-line bg-white shadow-soft">
       <div className="overflow-x-auto">
-        <table className="min-w-full table-fixed border-collapse text-left text-sm">
+        <table className="min-w-full border-collapse text-left text-xs">
           <thead className="bg-mist text-xs uppercase tracking-normal text-slate-600">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id} className="border-b border-line px-3 py-3 font-semibold">
+                  <th key={header.id} className="border-b border-line px-2 py-2 font-semibold">
                     {header.isPlaceholder ? null : (
                       <button
                         type="button"
@@ -144,12 +154,21 @@ export function DataTable<T>({ table, empty }: { table: Table<T>; empty: string 
           <tbody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-b border-line last:border-b-0 hover:bg-mist/60">
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="overflow-hidden px-3 py-3 align-top text-slate-700">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+                <tr
+                  key={row.id}
+                  className={`border-b border-line last:border-b-0 ${getRowClassName?.(row) ?? ""}`}
+                >
+                  {row.getVisibleCells().map((cell) => {
+                    const rowSpan = getCellRowSpan?.(cell) ?? 1;
+                    if (rowSpan === 0) {
+                      return null;
+                    }
+                    return (
+                      <td key={cell.id} rowSpan={rowSpan} className="overflow-hidden px-2 py-2 align-top text-slate-700">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             ) : (

@@ -124,8 +124,30 @@ export interface ScoreAggregate extends ScoreMetric {
 export interface LatencySummary {
   avg: number | null;
   p50: number | null;
+  p90: number | null;
   p95: number | null;
   max: number | null;
+}
+
+export interface ModelRunSummary {
+  id: string;
+  runKey: string;
+  runId: string;
+  experimentName: string;
+  startedAt: string;
+  endedAt?: string | null;
+  datasetSha256?: string | null;
+  experimentSha256?: string | null;
+  gitCommit?: string | null;
+  modelKey: string;
+  model: string;
+  itemRunCount: number;
+  successCount: number;
+  failedCount: number;
+  evaluatorErrorCount: number;
+  usage: TokenUsage;
+  latency: LatencySummary;
+  scoreAggregates: ScoreAggregate[];
 }
 
 export interface RunSummary {
@@ -149,6 +171,7 @@ export interface RunSummary {
   totalTokens: number;
   latency: LatencySummary;
   scoreAggregates: ScoreAggregate[];
+  modelSummaries: ModelRunSummary[];
   artifacts: ArtifactFile[];
 }
 

@@ -5,6 +5,7 @@ import type {
   ItemRunRecord,
   Lane,
   LatencySummary,
+  ModelRunSummary,
   RunDetail,
   RunManifest,
   RunSummary,
@@ -116,6 +117,7 @@ export function buildRunSummary(
     ]),
   ].sort();
   const totalTokens = records.reduce((total, record) => total + usage(record).total_tokens, 0);
+  const modelSummaries = buildModelSummaries(key, manifest, records, modelKeys);
   return {
     key,
     path: runPath,
@@ -137,6 +139,7 @@ export function buildRunSummary(
     totalTokens,
     latency: summarizeLatency(records.map((record) => record.duration_s).filter(isFiniteNumber)),
     scoreAggregates: aggregateScores(records),
+    modelSummaries,
     artifacts: [],
   };
 }
@@ -361,14 +364,70 @@ function runStatus(
   return "complete";
 }
 
-function summarizeLatency(values: number[]): LatencySummary {
+function buildModelSummaries(
+  runKey: string,
+  manifest: RunManifest,
+  records: ItemRunRecord[],
+  modelKeys: string[],
+): ModelRunSummary[] {
+  const modelConfigByKey = new Map((manifest.model_configs ?? []).map((config) => [config.key, config]));
+  return modelKeys.map((modelKey) => {
+    const modelRecords = records.filter((record) => record.model_key === modelKey);
+    const failedCount = modelRecords.filter((record) => record.status === "failed").length;
+    const successCount = modelRecords.filter((record) => record.status === "success").length;
+    const evaluatorErrorCount = modelRecords.reduce(
+      (count, record) => count + evalErrorCount(record.evals) + stepEvalErrorCount(record.steps),
+      0,
+    );
+    const modelConfig = modelConfigByKey.get(modelKey);
+    return {
+      id: `${runKey}::${modelKey}`,
+      runKey,
+      runId: manifest.run_id,
+      experimentName: manifest.experiment_name,
+      startedAt: manifest.started_at,
+      endedAt: manifest.ended_at,
+      datasetSha256: manifest.dataset_sha256,
+      experimentSha256: manifest.experiment_sha256,
+      gitCommit: manifest.git_commit,
+      modelKey,
+      model: modelRecords[0]?.model ?? modelConfig?.model ?? modelKey,
+      itemRunCount: modelRecords.length,
+      successCount,
+      failedCount,
+      evaluatorErrorCount,
+      usage: sumUsage(modelRecords),
+      latency: summarizeLatency(modelRecords.map((record) => record.duration_s).filter(isFiniteNumber)),
+      scoreAggregates: aggregateScores(modelRecords),
+    };
+  });
+}
+
+function sumUsage(records: ItemRunRecord[]): TokenUsage {
+  return records.reduce(
+    (total, record) => {
+      const recordUsage = usage(record);
+      return {
+        input_tokens: total.input_tokens + recordUsage.input_tokens,
+        cached_tokens: total.cached_tokens + recordUsage.cached_tokens,
+        output_tokens: total.output_tokens + recordUsage.output_tokens,
+        reasoning_tokens: total.reasoning_tokens + recordUsage.reasoning_tokens,
+        total_tokens: total.total_tokens + recordUsage.total_tokens,
+      };
+    },
+    { ...emptyUsage },
+  );
+}
+
+export function summarizeLatency(values: number[]): LatencySummary {
   const sorted = values.filter(isFiniteNumber).sort((a, b) => a - b);
   if (!sorted.length) {
-    return { avg: null, p50: null, p95: null, max: null };
+    return { avg: null, p50: null, p90: null, p95: null, max: null };
   }
   return {
     avg: sorted.reduce((sum, value) => sum + value, 0) / sorted.length,
     p50: percentile(sorted, 50),
+    p90: percentile(sorted, 90),
     p95: percentile(sorted, 95),
     max: sorted[sorted.length - 1],
   };
@@ -386,7 +445,17 @@ function percentile(values: number[], percent: number): number {
 }
 
 function usage(record: ItemRunRecord): TokenUsage {
-  return record.usage ?? emptyUsage;
+  return normalizeUsage(record.usage);
+}
+
+function normalizeUsage(raw: Partial<TokenUsage> | null | undefined): TokenUsage {
+  return {
+    input_tokens: isFiniteNumber(raw?.input_tokens) ? raw.input_tokens : 0,
+    cached_tokens: isFiniteNumber(raw?.cached_tokens) ? raw.cached_tokens : 0,
+    output_tokens: isFiniteNumber(raw?.output_tokens) ? raw.output_tokens : 0,
+    reasoning_tokens: isFiniteNumber(raw?.reasoning_tokens) ? raw.reasoning_tokens : 0,
+    total_tokens: isFiniteNumber(raw?.total_tokens) ? raw.total_tokens : 0,
+  };
 }
 
 function isFiniteNumber(value: unknown): value is number {

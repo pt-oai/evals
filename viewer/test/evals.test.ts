@@ -38,6 +38,28 @@ describe("artifact summaries", () => {
     ]);
 
     expect(buildLanes([summary]).map((lane) => lane.modelKey)).toEqual(["m1", "m2"]);
+    expect(summary.modelSummaries.map((model) => model.modelKey)).toEqual(["m1", "m2"]);
+  });
+
+  it("summarizes scores, latency, and tokens by model", () => {
+    const summary = buildRunSummary("run-a", "/tmp/run-a", manifest("run-a", ["m1", "m2", "m3"]), [
+      record("item-1", "m1", { exact: true }, {}, 10),
+      record("item-2", "m1", { exact: false }, {}, 30, "failed"),
+      record("item-1", "m2", { exact: true }, {}, 20),
+    ]);
+
+    const m1 = summary.modelSummaries.find((model) => model.modelKey === "m1");
+    const m3 = summary.modelSummaries.find((model) => model.modelKey === "m3");
+
+    expect(m1?.itemRunCount).toBe(2);
+    expect(m1?.failedCount).toBe(1);
+    expect(m1?.usage.total_tokens).toBe(40);
+    expect(m1?.latency.avg).toBe(2);
+    expect(m1?.latency.p50).toBe(2);
+    expect(m1?.latency.p90).toBeCloseTo(2.8);
+    expect(m1?.scoreAggregates.find((score) => score.label === "exact")?.mean).toBe(0.5);
+    expect(m3?.itemRunCount).toBe(0);
+    expect(m3?.usage.total_tokens).toBe(0);
   });
 
   it("joins compare rows by item and repetition", () => {
