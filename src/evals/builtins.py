@@ -30,16 +30,18 @@ class Selector:
     cast: Callable[[Any], Any] | None = None
     default: Any = _UNSET
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> Any:
-        resolved = self.resolve(dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> Any:
+        resolved = self.resolve(dataset_item, model, output, ctx)
         if not resolved.ok:
             raise SelectorError(resolved.error or "selector failed")
         return resolved.value
 
-    def resolve(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> Resolved:
+    def resolve(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> Resolved:
         try:
-            value = self._root(dataset_row, output)
-            if self.path:
+            value, remaining_path = self._root(dataset_item, output, ctx)
+            if remaining_path:
+                value = resolve_path(value, remaining_path)
+            elif self.path and self.source not in {"step", "step_text"}:
                 value = resolve_path(value, self.path)
             if self.cast is not None:
                 value = self.cast(value)
@@ -58,18 +60,25 @@ class Selector:
             bits.append(f"cast={cast_name}")
         return ".".join(bits)
 
-    def _root(self, dataset_row: dict[str, str], output: Any) -> Any:
-        if self.source == "row":
-            return dataset_row
+    def _root(self, dataset_item: dict[str, str], output: Any, ctx: Any) -> tuple[Any, str | None]:
+        if self.source == "item":
+            return dataset_item, self.path
         if self.source == "out":
-            return output.value
+            return output.value, self.path
         if self.source == "text":
-            return output.text
+            return output.text, None
+        if self.source == "step":
+            step_key, remaining_path = split_step_path(self.path)
+            return step_output_value(ctx, step_key), remaining_path
+        if self.source == "step_text":
+            step_key, remaining_path = split_step_path(self.path)
+            value = step_output_text(ctx, step_key)
+            return value, remaining_path
         raise SelectorError(f"unknown selector source: {self.source}")
 
 
-def row(path: str, *, cast: Callable[[Any], Any] | None = None, default: Any = _UNSET) -> Selector:
-    return Selector(source="row", path=path, cast=cast, default=default)
+def item(path: str, *, cast: Callable[[Any], Any] | None = None, default: Any = _UNSET) -> Selector:
+    return Selector(source="item", path=path, cast=cast, default=default)
 
 
 def out(
@@ -85,10 +94,28 @@ def text(*, cast: Callable[[Any], Any] | None = None) -> Selector:
     return Selector(source="text", cast=cast)
 
 
+def step(
+    path: str,
+    *,
+    cast: Callable[[Any], Any] | None = None,
+    default: Any = _UNSET,
+) -> Selector:
+    return Selector(source="step", path=path, cast=cast, default=default)
+
+
+def step_text(
+    path: str,
+    *,
+    cast: Callable[[Any], Any] | None = None,
+    default: Any = _UNSET,
+) -> Selector:
+    return Selector(source="step_text", path=path, cast=cast, default=default)
+
+
 class BuiltInEvaluator:
     operator = "builtin"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
         raise NotImplementedError
 
     def _result(
@@ -109,9 +136,9 @@ class Equal(BuiltInEvaluator):
     expected: Any
     operator = "equal"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        actual = resolve_operand(self.actual, dataset_row, model, output, ctx)
-        expected = resolve_operand(self.expected, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        actual = resolve_operand(self.actual, dataset_item, model, output, ctx)
+        expected = resolve_operand(self.expected, dataset_item, model, output, ctx)
         if not actual.ok or not expected.ok:
             return selector_failure(self.operator, actual, expected)
         score = actual.value == expected.value
@@ -127,9 +154,9 @@ class NotEqual(BuiltInEvaluator):
     expected: Any
     operator = "not_equal"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        actual = resolve_operand(self.actual, dataset_row, model, output, ctx)
-        expected = resolve_operand(self.expected, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        actual = resolve_operand(self.actual, dataset_item, model, output, ctx)
+        expected = resolve_operand(self.expected, dataset_item, model, output, ctx)
         if not actual.ok or not expected.ok:
             return selector_failure(self.operator, actual, expected)
         score = actual.value != expected.value
@@ -147,9 +174,9 @@ class ApproxEqual(BuiltInEvaluator):
     rel_tol: float = 1e-9
     operator = "approx_equal"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        actual = resolve_operand(self.actual, dataset_row, model, output, ctx)
-        expected = resolve_operand(self.expected, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        actual = resolve_operand(self.actual, dataset_item, model, output, ctx)
+        expected = resolve_operand(self.expected, dataset_item, model, output, ctx)
         if not actual.ok or not expected.ok:
             return selector_failure(self.operator, actual, expected)
         try:
@@ -182,9 +209,9 @@ class Contains(BuiltInEvaluator):
     case_sensitive: bool = True
     operator = "contains"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        container = resolve_operand(self.container, dataset_row, model, output, ctx)
-        expected = resolve_operand(self.expected, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        container = resolve_operand(self.container, dataset_item, model, output, ctx)
+        expected = resolve_operand(self.expected, dataset_item, model, output, ctx)
         if not container.ok or not expected.ok:
             return selector_failure(self.operator, container, expected)
         haystack = container.value
@@ -212,8 +239,8 @@ class RegexMatch(BuiltInEvaluator):
     flags: int = 0
     operator = "regex_match"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        value = resolve_operand(self.value, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        value = resolve_operand(self.value, dataset_item, model, output, ctx)
         if not value.ok:
             return selector_failure(self.operator, value)
         try:
@@ -232,8 +259,8 @@ class NonEmpty(BuiltInEvaluator):
     value: Any
     operator = "non_empty"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        value = resolve_operand(self.value, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        value = resolve_operand(self.value, dataset_item, model, output, ctx)
         if not value.ok:
             return selector_failure(self.operator, value)
         score = is_non_empty(value.value)
@@ -256,8 +283,8 @@ class LengthBetween(BuiltInEvaluator):
         if self.min_len is not None and self.max_len is not None and self.min_len > self.max_len:
             raise ValueError("min_len cannot be greater than max_len")
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        value = resolve_operand(self.value, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        value = resolve_operand(self.value, dataset_item, model, output, ctx)
         if not value.ok:
             return selector_failure(self.operator, value)
         try:
@@ -282,8 +309,8 @@ class JsonPathExists(BuiltInEvaluator):
     path: str
     operator = "json_path_exists"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        value = resolve_json_value(self.value, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        value = resolve_json_value(self.value, dataset_item, model, output, ctx)
         if not value.ok:
             return selector_failure(self.operator, value)
         try:
@@ -300,9 +327,9 @@ class JsonPathEqual(BuiltInEvaluator):
     expected: Any
     operator = "json_path_equal"
 
-    def __call__(self, dataset_row: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
-        value = resolve_json_value(self.value, dataset_row, model, output, ctx)
-        expected = resolve_operand(self.expected, dataset_row, model, output, ctx)
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        value = resolve_json_value(self.value, dataset_item, model, output, ctx)
+        expected = resolve_operand(self.expected, dataset_item, model, output, ctx)
         if not value.ok or not expected.ok:
             return selector_failure(self.operator, value, expected)
         try:
@@ -319,24 +346,24 @@ class JsonPathEqual(BuiltInEvaluator):
 
 def resolve_operand(
     operand: Any,
-    dataset_row: dict[str, str],
+    dataset_item: dict[str, str],
     model: Any,
     output: Any,
     ctx: Any,
 ) -> Resolved:
     if isinstance(operand, Selector):
-        return operand.resolve(dataset_row, model, output, ctx)
+        return operand.resolve(dataset_item, model, output, ctx)
     return Resolved(ok=True, value=operand)
 
 
 def resolve_json_value(
     operand: Any,
-    dataset_row: dict[str, str],
+    dataset_item: dict[str, str],
     model: Any,
     output: Any,
     ctx: Any,
 ) -> Resolved:
-    resolved = resolve_operand(operand, dataset_row, model, output, ctx)
+    resolved = resolve_operand(operand, dataset_item, model, output, ctx)
     if not resolved.ok:
         return resolved
     value = resolved.value
@@ -356,6 +383,34 @@ def selector_failure(operator: str, *resolved_values: Resolved) -> EvalResult:
         comment="; ".join(errors) or "selector failed",
         metadata={"operator": operator},
     )
+
+
+def split_step_path(path: str | None) -> tuple[str, str | None]:
+    if not path:
+        raise KeyError("step key is required")
+    step_key, separator, remaining_path = path.partition(".")
+    if not step_key:
+        raise KeyError("step key is required")
+    return step_key, remaining_path if separator else None
+
+
+def step_output_value(ctx: Any, step_key: str) -> Any:
+    output = get_step_output(ctx, step_key)
+    return output.value
+
+
+def step_output_text(ctx: Any, step_key: str) -> str:
+    output = get_step_output(ctx, step_key)
+    return output.text
+
+
+def get_step_output(ctx: Any, step_key: str) -> Any:
+    if ctx is None or not hasattr(ctx, "step_outputs"):
+        raise KeyError("step outputs are unavailable")
+    outputs = getattr(ctx, "step_outputs")
+    if step_key not in outputs:
+        raise KeyError(step_key)
+    return outputs[step_key]
 
 
 def resolve_path(value: Any, path: str) -> Any:
@@ -397,4 +452,3 @@ def short_repr(value: Any, *, max_length: int = 120) -> str:
     if len(text) <= max_length:
         return text
     return text[: max_length - 3] + "..."
-

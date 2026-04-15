@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -10,6 +12,14 @@ from evals._utils import to_jsonable
 ScoreValue = bool | int | float
 ScoreType = Literal["BOOLEAN", "NUMERIC"]
 Status = Literal["success", "failed", "skipped"]
+EvalFn = Callable[..., Any]
+
+
+@dataclass(frozen=True)
+class EvalDefinition:
+    key: str
+    func: EvalFn
+    description: str | None = None
 
 
 class ModelConfig(BaseModel):
@@ -99,13 +109,28 @@ class GenerationRecord(BaseModel):
     error: ErrorRecord | None = None
 
 
-class ExecutionRecord(BaseModel):
-    execution_id: str
+class StepRecord(BaseModel):
+    key: str
+    status: Status
+    started_at: str
+    ended_at: str
+    duration_s: float
+    output: TaskOutput | None = None
+    evals: list[EvalResult] = Field(default_factory=list)
+    usage: TokenUsage = Field(default_factory=TokenUsage)
+    response_id: str | None = None
+    generations: list[GenerationRecord] = Field(default_factory=list)
+    error: ErrorRecord | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ItemRunRecord(BaseModel):
+    item_run_id: str
     run_id: str
     experiment_name: str
-    row_index: int
-    row_id: str
-    row: dict[str, str]
+    item_index: int
+    item_id: str
+    item: dict[str, str]
     model_key: str
     model: str
     model_params: dict[str, Any] = Field(default_factory=dict)
@@ -119,6 +144,7 @@ class ExecutionRecord(BaseModel):
     usage: TokenUsage = Field(default_factory=TokenUsage)
     response_id: str | None = None
     generations: list[GenerationRecord] = Field(default_factory=list)
+    steps: list[StepRecord] = Field(default_factory=list)
     raw_input: Any | None = None
     raw_output: Any | None = None
     error: ErrorRecord | None = None

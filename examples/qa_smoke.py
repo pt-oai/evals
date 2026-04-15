@@ -1,4 +1,4 @@
-from evals import Contains, Experiment, LengthBetween, ModelConfig, row, text
+from evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
 
 
 exp = Experiment(
@@ -19,19 +19,19 @@ exp.model(
 )
 
 
-async def answer(row, model, ctx):
+async def answer(item, model, ctx):
     response = await ctx.responses.create(
         model=model.model,
         **model.params,
-        input=row["question"],
+        input=item["question"],
     )
     return response.output_text
 
 
-exp.task = answer
+exp.workflow = answer
 exp.eval(
     "contains_expected",
-    Contains(container=text(), expected=row("expected"), case_sensitive=False),
+    Contains(container=text(), expected=item("expected"), case_sensitive=False),
     description="Expected answer appears",
 )
 exp.eval("brevity", LengthBetween(value=text(), max_len=200))

@@ -11,7 +11,7 @@ def write_dataset(tmp_path):
     return dataset
 
 
-def test_registers_task_model_and_eval(tmp_path, fake_client):
+def test_registers_workflow_model_and_eval(tmp_path, fake_client):
     exp = Experiment(
         name="demo",
         dataset=write_dataset(tmp_path),
@@ -21,16 +21,16 @@ def test_registers_task_model_and_eval(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    async def task(row, model, ctx):
+    async def workflow(item, model, ctx):
         return "ok"
 
-    def always(row, model, output, ctx):
+    def always(item, model, output, ctx):
         return True
 
-    exp.task = task
+    exp.workflow = workflow
     exp.eval("always", always)
 
-    assert exp.task is task
+    assert exp.workflow is workflow
     assert exp.registered_models[0].key == "m1"
     assert exp.registered_evals[0].key == "always"
 
@@ -42,11 +42,11 @@ def test_rejects_duplicate_model_keys(tmp_path):
         exp.model(ModelConfig(key="m1", model="gpt-test"))
 
 
-def test_task_must_be_callable(tmp_path):
+def test_workflow_must_be_callable(tmp_path):
     exp = Experiment(name="demo", dataset=write_dataset(tmp_path), output_dir=tmp_path)
 
     with pytest.raises(TypeError, match="callable"):
-        exp.task = "not callable"
+        exp.workflow = "not callable"
 
 
 def test_eval_requires_callable(tmp_path):
@@ -56,11 +56,11 @@ def test_eval_requires_callable(tmp_path):
         exp.eval("bad", "not callable")
 
 
-def test_validate_requires_task_and_model(tmp_path):
+def test_validate_requires_workflow_and_model(tmp_path):
     exp = Experiment(name="demo", dataset=write_dataset(tmp_path), output_dir=tmp_path)
     with pytest.raises(ValueError, match="at least one model"):
         exp.validate()
 
     exp.model(ModelConfig(key="m1", model="gpt-test"))
-    with pytest.raises(ValueError, match="task callable"):
+    with pytest.raises(ValueError, match="workflow callable"):
         exp.validate()

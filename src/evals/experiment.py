@@ -3,24 +3,16 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
-from evals.models import ModelConfig
+from evals.models import EvalDefinition, ItemRunRecord, ModelConfig
 from evals.runner import Runner
 
-TaskFn = Callable[..., Any]
+WorkflowFn = Callable[..., Any]
 EvalFn = Callable[..., Any]
-
-
-@dataclass(frozen=True)
-class EvalDefinition:
-    key: str
-    func: EvalFn
-    description: str | None = None
 
 
 class Experiment:
@@ -57,7 +49,7 @@ class Experiment:
         self.metadata = metadata or {}
         self.openai_client = openai_client
         self._models: list[ModelConfig] = []
-        self._task: TaskFn | None = None
+        self._workflow: WorkflowFn | None = None
         self._evals: list[EvalDefinition] = []
 
     @property
@@ -77,14 +69,14 @@ class Experiment:
         return list(self._evals)
 
     @property
-    def task(self) -> TaskFn | None:
-        return self._task
+    def workflow(self) -> WorkflowFn | None:
+        return self._workflow
 
-    @task.setter
-    def task(self, func: TaskFn | None) -> None:
+    @workflow.setter
+    def workflow(self, func: WorkflowFn | None) -> None:
         if func is not None and not callable(func):
-            raise TypeError("task must be callable")
-        self._task = func
+            raise TypeError("workflow must be callable")
+        self._workflow = func
 
     def model(self, config: ModelConfig) -> ModelConfig:
         if any(existing.key == config.key for existing in self._models):
@@ -112,10 +104,10 @@ class Experiment:
         self._evals.append(EvalDefinition(key=key, func=evaluator, description=description))
         return evaluator
 
-    def run(self) -> list[Any]:
+    def run(self) -> list[ItemRunRecord]:
         return asyncio.run(self.run_async())
 
-    async def run_async(self) -> list[Any]:
+    async def run_async(self) -> list[ItemRunRecord]:
         load_dotenv()
         runner = Runner(self)
         return await runner.run()
@@ -135,8 +127,8 @@ class Experiment:
             raise FileNotFoundError(f"dataset not found: {self.dataset}")
         if not self._models:
             raise ValueError("at least one model must be registered")
-        if self._task is None:
-            raise ValueError("a task callable must be assigned to exp.task")
+        if self._workflow is None:
+            raise ValueError("a workflow callable must be assigned to exp.workflow")
 
     def run_dir(self) -> Path:
         return self.output_dir / self.name

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.4.0] - 2026-04-15
+
+### Added
+
+- Multi-step workflows via `ctx.step(...)`, with step-owned outputs, evals, generations, usage, latency, and errors.
+- Step selectors: `step(...)` and `step_text(...)`.
+- `steps.csv` artifact and scoped score rows in `scores.csv`.
+
+### Changed
+
+- Renamed public terminology from row/execution/task to item/item-run/workflow.
+- Replaced `exp.task = callable` with `exp.workflow = callable`.
+- Replaced the dataset selector `row(...)` with `item(...)`.
+- Renamed `ExecutionRecord` to `ItemRunRecord` and public result fields to item/item-run names.
+
 ## [0.3.0] - 2026-04-15
 
 ### Changed

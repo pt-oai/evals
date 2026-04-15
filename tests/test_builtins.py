@@ -20,14 +20,24 @@ from evals import (
     NotEqual,
     RegexMatch,
     TaskOutput,
+    item,
     out,
-    row,
+    step,
+    step_text,
     text,
 )
 
 
-def call(evaluator, *, dataset_row=None, output=None):
-    dataset_row = dataset_row or {"score": "0.5", "expected": "hello", "term": "WORLD"}
+class StepCtx:
+    def __init__(self):
+        self.step_outputs = {
+            "draft": TaskOutput(text="draft answer", value={"answer": "draft answer"}),
+            "extract": TaskOutput(text="", value={"score": 0.5}),
+        }
+
+
+def call(evaluator, *, dataset_item=None, output=None, ctx=None):
+    dataset_item = dataset_item or {"score": "0.5", "expected": "hello", "term": "WORLD"}
     output = output or TaskOutput(
         text="Hello world [1]",
         value={
@@ -36,7 +46,7 @@ def call(evaluator, *, dataset_row=None, output=None):
             "labels": ["alpha", "beta"],
         },
     )
-    return evaluator(dataset_row, model=None, output=output, ctx=None)
+    return evaluator(dataset_item, model=None, output=output, ctx=ctx)
 
 
 def write_dataset(tmp_path):
@@ -46,24 +56,24 @@ def write_dataset(tmp_path):
 
 
 def test_equal_and_not_equal():
-    assert call(Equal(actual=out("score"), expected=row("score", cast=float))).score is True
-    assert call(Equal(actual=out("score"), expected=row("score"))).score is False
-    assert call(NotEqual(actual=out("score"), expected=row("score"))).score is True
+    assert call(Equal(actual=out("score"), expected=item("score", cast=float))).score is True
+    assert call(Equal(actual=out("score"), expected=item("score"))).score is False
+    assert call(NotEqual(actual=out("score"), expected=item("score"))).score is True
 
 
 def test_approx_equal_and_non_numeric_failure():
     result = call(ApproxEqual(actual=out("score"), expected=0.51, abs_tol=0.02))
     assert result.score is True
-    failed = call(ApproxEqual(actual=row("expected"), expected=0.5))
+    failed = call(ApproxEqual(actual=item("expected"), expected=0.5))
     assert failed.score is False
     assert "numeric" in failed.comment
 
 
 def test_contains_for_strings_lists_and_dicts():
-    assert call(Contains(container=text(), expected=row("term"), case_sensitive=False)).score is True
+    assert call(Contains(container=text(), expected=item("term"), case_sensitive=False)).score is True
     assert call(Contains(container=out("labels"), expected="alpha")).score is True
     assert call(Contains(container={"score": 1}, expected="score")).score is True
-    assert call(Contains(container=text(), expected=row("term"), case_sensitive=True)).score is False
+    assert call(Contains(container=text(), expected=item("term"), case_sensitive=True)).score is False
 
 
 def test_regex_non_empty_and_length_between():
@@ -95,14 +105,24 @@ def test_json_path_helpers_support_dicts_lists_and_strings():
 
 def test_selectors_handle_nested_paths_casts_defaults_and_failures():
     assert call(Equal(actual=out("nested.items.0.name"), expected="first")).score is True
-    assert call(Equal(actual=row("score", cast=float), expected=0.5)).score is True
-    assert call(Equal(actual=row("missing", default="fallback"), expected="fallback")).score is True
+    assert call(Equal(actual=item("score", cast=float), expected=0.5)).score is True
+    assert call(Equal(actual=item("missing", default="fallback"), expected="fallback")).score is True
     missing = call(Equal(actual=out("missing.path"), expected="x"))
     assert missing.score is False
     assert "missing" in missing.comment
-    cast_failed = call(Equal(actual=row("expected", cast=float), expected=1.0))
+    cast_failed = call(Equal(actual=item("expected", cast=float), expected=1.0))
     assert cast_failed.score is False
     assert "cast" in cast_failed.comment
+
+
+def test_step_selectors_read_prior_step_outputs():
+    ctx = StepCtx()
+    assert call(Equal(actual=step("extract.score"), expected=0.5), ctx=ctx).score is True
+    assert call(Equal(actual=step("draft.answer"), expected="draft answer"), ctx=ctx).score is True
+    assert call(Equal(actual=step_text("draft"), expected="draft answer"), ctx=ctx).score is True
+    missing = call(Equal(actual=step("missing.score"), expected=0.5), ctx=ctx)
+    assert missing.score is False
+    assert "missing" in missing.comment
 
 
 def test_experiment_eval_registers_direct_custom_functions_and_builtins(tmp_path, fake_client):
@@ -115,23 +135,23 @@ def test_experiment_eval_registers_direct_custom_functions_and_builtins(tmp_path
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    async def task(dataset_row, model, ctx):
+    async def workflow(dataset_item, model, ctx):
         return TaskOutput(text="hello", value={"score": 0.5})
 
-    def direct_custom(dataset_row, model, output, ctx):
+    def direct_custom(dataset_item, model, output, ctx):
         return True
 
-    exp.task = task
+    exp.workflow = workflow
     exp.eval("direct_custom", direct_custom)
-    exp.eval("builtin_equal", Equal(actual=out("score"), expected=row("score", cast=float)))
-    exp.eval("inline_custom", lambda dataset_row, model, output, ctx: True)
+    exp.eval("builtin_equal", Equal(actual=out("score"), expected=item("score", cast=float)))
+    exp.eval("inline_custom", lambda dataset_item, model, output, ctx: True)
 
     records = exp.run()
     keys = {result.key for result in records[0].evals}
     assert keys == {"direct_custom", "builtin_equal", "inline_custom"}
 
 
-def test_duplicate_eval_keys_are_rejected_across_registration_styles(tmp_path):
+def test_duplicate_eval_keys_are_rejected(tmp_path):
     exp = Experiment(name="dup", dataset=write_dataset(tmp_path), output_dir=tmp_path / "runs")
     exp.eval("same", Equal(actual=1, expected=1))
     with pytest.raises(ValueError, match="duplicate eval key"):
@@ -148,11 +168,11 @@ def test_registered_key_overrides_single_eval_result_key(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    async def task(dataset_row, model, ctx):
+    async def workflow(dataset_item, model, ctx):
         return "ok"
 
-    exp.task = task
-    exp.eval("registered", lambda dataset_row, model, output, ctx: EvalResult(key="other", score=True))
+    exp.workflow = workflow
+    exp.eval("registered", lambda dataset_item, model, output, ctx: EvalResult(key="other", score=True))
 
     records = exp.run()
     assert records[0].evals[0].key == "registered"
@@ -168,14 +188,14 @@ def test_dict_and_list_eval_returns_keep_multi_score_behavior(tmp_path, fake_cli
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    async def task(dataset_row, model, ctx):
+    async def workflow(dataset_item, model, ctx):
         return "ok"
 
-    exp.task = task
-    exp.eval("dict_bundle", lambda dataset_row, model, output, ctx: {"a": True, "b": 0.5})
+    exp.workflow = workflow
+    exp.eval("dict_bundle", lambda dataset_item, model, output, ctx: {"a": True, "b": 0.5})
     exp.eval(
         "list_bundle",
-        lambda dataset_row, model, output, ctx: [
+        lambda dataset_item, model, output, ctx: [
             EvalResult(score=True),
             EvalResult(key="explicit", score=False),
         ],
@@ -196,11 +216,11 @@ def test_builtin_scores_are_persisted_to_csv_files(tmp_path, fake_client):
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
-    async def task(dataset_row, model, ctx):
+    async def workflow(dataset_item, model, ctx):
         return TaskOutput(text="hello world", value={"score": 0.5})
 
-    exp.task = task
-    exp.eval("score_equal", Equal(actual=out("score"), expected=row("score", cast=float)))
+    exp.workflow = workflow
+    exp.eval("score_equal", Equal(actual=out("score"), expected=item("score", cast=float)))
     records = exp.run()
     assert records[0].evals[0].score is True
 

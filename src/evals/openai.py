@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import inspect
 import time
 from typing import Any
 
 from openai import AsyncOpenAI
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
-from evals._utils import to_jsonable
-from evals.models import ErrorRecord, GenerationRecord, ModelConfig, TokenUsage
+from evals._utils import to_jsonable, utc_now_iso
+from evals.errors import exception_to_error
+from evals.evaluation import eval_definitions_from_specs, has_eval_errors, run_eval_definitions
+from evals.models import GenerationRecord, ModelConfig, StepRecord, TaskOutput, TokenUsage
 
 
 class ResponsesProxy:
@@ -71,17 +74,22 @@ class ExperimentContext:
         self,
         *,
         client: Any,
-        row: dict[str, str],
+        item: dict[str, str],
         model: ModelConfig,
-        execution_id: str,
+        item_run_id: str,
         capture_raw: bool,
         max_retries: int,
+        fail_fast: bool = False,
     ) -> None:
         self.client = client
-        self.row = row
+        self.item = item
         self.model = model
-        self.execution_id = execution_id
+        self.item_run_id = item_run_id
+        self.fail_fast = fail_fast
         self.generations: list[GenerationRecord] = []
+        self.steps: list[StepRecord] = []
+        self.step_outputs: dict[str, TaskOutput] = {}
+        self._step_keys: set[str] = set()
         self.responses = ResponsesProxy(
             client,
             self.generations,
@@ -95,6 +103,77 @@ class ExperimentContext:
         for generation in self.generations:
             usage += generation.usage
         return usage
+
+    async def step(
+        self,
+        key: str,
+        callable_or_value: Any,
+        *,
+        evals: list[tuple[Any, ...]] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> TaskOutput:
+        if not key.strip():
+            raise ValueError("step key must not be empty")
+        if key in self._step_keys:
+            raise ValueError(f"duplicate step key: {key}")
+        self._step_keys.add(key)
+
+        eval_definitions = eval_definitions_from_specs(evals)
+        generation_start = len(self.generations)
+        started_at = utc_now_iso()
+        started = time.perf_counter()
+        output: TaskOutput | None = None
+        step_evals = []
+        error = None
+        status = "success"
+
+        try:
+            value = callable_or_value() if callable(callable_or_value) else callable_or_value
+            if inspect.isawaitable(value):
+                value = await value
+            output = TaskOutput.normalize(value)
+            self.step_outputs[key] = output
+            step_evals = await run_eval_definitions(
+                eval_definitions,
+                item=self.item,
+                model=self.model,
+                output=output,
+                ctx=self,
+            )
+            if self.fail_fast and has_eval_errors(step_evals):
+                raise RuntimeError(f"step eval failed: {key}")
+            return output
+        except Exception as exc:
+            status = "failed"
+            error = exception_to_error(exc)
+            raise
+        finally:
+            ended_at = utc_now_iso()
+            step_generations = self.generations[generation_start:]
+            usage = TokenUsage()
+            response_id = None
+            for generation in step_generations:
+                usage += generation.usage
+            for generation in reversed(step_generations):
+                if generation.response_id:
+                    response_id = generation.response_id
+                    break
+            self.steps.append(
+                StepRecord(
+                    key=key,
+                    status=status,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    duration_s=time.perf_counter() - started,
+                    output=output,
+                    evals=step_evals,
+                    usage=usage,
+                    response_id=response_id,
+                    generations=step_generations,
+                    error=error,
+                    metadata=metadata or {},
+                )
+            )
 
 
 def make_default_client() -> AsyncOpenAI:
@@ -119,20 +198,6 @@ def extract_usage(response: Any) -> TokenUsage:
     )
 
 
-def exception_to_error(exc: BaseException) -> ErrorRecord:
-    details: dict[str, Any] = {}
-    status_code = getattr(exc, "status_code", None)
-    if status_code is not None:
-        details["status_code"] = status_code
-    request_id = getattr(exc, "request_id", None)
-    if request_id is not None:
-        details["request_id"] = request_id
-    code = getattr(exc, "code", None)
-    if code is not None:
-        details["code"] = code
-    return ErrorRecord(type=exc.__class__.__name__, message=str(exc), details=details)
-
-
 def is_retryable_openai_error(exc: BaseException) -> bool:
     status_code = getattr(exc, "status_code", None)
     if status_code in {408, 409, 429, 500, 502, 503, 504}:
@@ -150,4 +215,3 @@ def _get(value: Any, key: str, default: Any = None) -> Any:
     if isinstance(value, dict):
         return value.get(key, default)
     return getattr(value, key, default)
-

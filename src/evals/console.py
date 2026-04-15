@@ -17,7 +17,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from evals.models import ExecutionRecord, ModelConfig
+from evals.models import ItemRunRecord, ModelConfig
 
 
 class ConsoleReporter:
@@ -34,11 +34,11 @@ class ConsoleReporter:
         self,
         *,
         experiment_name: str,
-        row_count: int,
+        item_count: int,
         model_count: int,
         repetitions: int,
-        total_executions: int,
-        remaining_executions: int,
+        total_item_runs: int,
+        remaining_item_runs: int,
         skipped: int,
         run_dir: Path,
         models: list[ModelConfig],
@@ -48,10 +48,10 @@ class ConsoleReporter:
             return
         summary = (
             f"[bold]{experiment_name}[/bold]\n"
-            f"Dataset rows: {row_count}\n"
+            f"Items: {item_count}\n"
             f"Models: {model_count}\n"
             f"Repetitions: {repetitions}\n"
-            f"Executions: {total_executions}"
+            f"Item runs: {total_item_runs}"
         )
         if skipped:
             summary += f"\nResumed: {skipped} already complete"
@@ -70,13 +70,13 @@ class ConsoleReporter:
                 transient=False,
             )
             self.progress.start()
-            self.overall_task = self.progress.add_task("overall", total=remaining_executions)
+            self.overall_task = self.progress.add_task("item runs", total=remaining_item_runs)
             for model in models:
                 self.model_tasks[model.key] = self.progress.add_task(
                     f"model:{model.key}", total=remaining_by_model.get(model.key, 0)
                 )
 
-    def record(self, record: ExecutionRecord) -> None:
+    def record(self, record: ItemRunRecord) -> None:
         if record.status == "failed":
             self.failed += 1
         else:
@@ -89,25 +89,27 @@ class ConsoleReporter:
                     self.overall_task,
                     description=f"overall ok={self.completed} failed={self.failed}",
                 )
-            task = self.model_tasks.get(record.model_key)
-            if task is not None:
-                self.progress.advance(task)
+            model_task = self.model_tasks.get(record.model_key)
+            if model_task is not None:
+                self.progress.advance(model_task)
 
         if self.display == "debug":
             style = "red" if record.status == "failed" else "green"
             self.console.print(
                 f"[{style}]{record.status}[/{style}] "
-                f"row={record.row_id} model={record.model_key} repetition={record.repetition}"
+                f"item={record.item_id} model={record.model_key} repetition={record.repetition}"
             )
 
         if record.status == "failed" and self.display != "quiet":
-            message = record.error.message if record.error else "execution failed"
+            message = record.error.message if record.error else "item run failed"
+            failed_step = first_failed_step(record)
+            step_part = f" step={failed_step.key}" if failed_step else ""
             self.console.print(
-                f"[red]Failed[/red] row={record.row_id} "
-                f"model={record.model_key} repetition={record.repetition}: {message}"
+                f"[red]Failed[/red] item={record.item_id} "
+                f"model={record.model_key} repetition={record.repetition}{step_part}: {message}"
             )
 
-    def finish(self, records: list[ExecutionRecord], artifacts: dict[str, Path]) -> None:
+    def finish(self, records: list[ItemRunRecord], artifacts: dict[str, Path]) -> None:
         if self.progress is not None:
             self.progress.stop()
         if self.display == "quiet":
@@ -119,26 +121,32 @@ class ConsoleReporter:
         self._print_failure_table(records)
         self._print_artifacts(artifacts)
 
-    def _print_score_table(self, records: list[ExecutionRecord]) -> None:
-        rows: dict[tuple[str, str], list[float]] = defaultdict(list)
+    def _print_score_table(self, records: list[ItemRunRecord]) -> None:
+        score_rows: dict[tuple[str, str, str, str], list[float]] = defaultdict(list)
         for record in records:
             for result in record.evals:
                 if result.key and result.score is not None and isinstance(result.score, (bool, int, float)):
-                    rows[(record.model_key, result.key)].append(float(result.score))
-        table = Table(title="Score Summary")
+                    score_rows[("item_run", "", record.model_key, result.key)].append(float(result.score))
+            for step in record.steps:
+                for result in step.evals:
+                    if result.key and result.score is not None and isinstance(result.score, (bool, int, float)):
+                        score_rows[("step", step.key, record.model_key, result.key)].append(float(result.score))
+        table = Table(title="Scores By Model")
+        table.add_column("Scope")
+        table.add_column("Step")
         table.add_column("Model")
         table.add_column("Score")
         table.add_column("Mean", justify="right")
         table.add_column("Count", justify="right")
-        if not rows:
-            table.add_row("-", "-", "-", "0")
+        if not score_rows:
+            table.add_row("-", "-", "-", "-", "-", "0")
         else:
-            for (model_key, score_key), values in sorted(rows.items()):
+            for (scope, step_key, model_key, score_key), values in sorted(score_rows.items()):
                 mean = sum(values) / len(values)
-                table.add_row(model_key, score_key, f"{mean:.3f}", str(len(values)))
+                table.add_row(scope, step_key or "-", model_key, score_key, f"{mean:.3f}", str(len(values)))
         self.console.print(table)
 
-    def _print_usage_table(self, records: list[ExecutionRecord]) -> None:
+    def _print_usage_table(self, records: list[ItemRunRecord]) -> None:
         usage = defaultdict(lambda: [0, 0, 0, 0, 0])
         for record in records:
             values = usage[record.model_key]
@@ -161,7 +169,7 @@ class ConsoleReporter:
                 table.add_row(model_key, *(str(value) for value in values))
         self.console.print(table)
 
-    def _print_latency_table(self, records: list[ExecutionRecord]) -> None:
+    def _print_latency_table(self, records: list[ItemRunRecord]) -> None:
         latencies: dict[str, list[float]] = defaultdict(list)
         for record in records:
             if record.status == "success":
@@ -187,22 +195,25 @@ class ConsoleReporter:
                 )
         self.console.print(table)
 
-    def _print_failure_table(self, records: list[ExecutionRecord]) -> None:
+    def _print_failure_table(self, records: list[ItemRunRecord]) -> None:
         failures = [record for record in records if record.status == "failed"]
         table = Table(title="Failures")
-        table.add_column("Row")
+        table.add_column("Item")
         table.add_column("Model")
         table.add_column("Repetition")
+        table.add_column("Step")
         table.add_column("Error")
         if not failures:
-            table.add_row("-", "-", "-", "None")
+            table.add_row("-", "-", "-", "-", "None")
         else:
             for record in failures[:20]:
+                failed_step = first_failed_step(record)
                 table.add_row(
-                    record.row_id,
+                    record.item_id,
                     record.model_key,
                     str(record.repetition),
-                    record.error.message if record.error else "execution failed",
+                    failed_step.key if failed_step else "-",
+                    record.error.message if record.error else "item run failed",
                 )
         self.console.print(table)
 
@@ -225,3 +236,10 @@ def percentile(values: list[float], percent: int) -> float:
     upper = min(lower + 1, len(values) - 1)
     weight = index - lower
     return values[lower] * (1 - weight) + values[upper] * weight
+
+
+def first_failed_step(record: ItemRunRecord):
+    for step in record.steps:
+        if step.status == "failed":
+            return step
+    return None
