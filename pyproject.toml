@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pt-evals"
-version = "0.5.0"
+version = "0.5.1"
 description = "Local Python experiment framework for OpenAI Responses API evals."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -26,6 +26,18 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/evals"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"viewer/app" = "evals/viewer/app"
+"viewer/components" = "evals/viewer/components"
+"viewer/lib" = "evals/viewer/lib"
+"viewer/next-env.d.ts" = "evals/viewer/next-env.d.ts"
+"viewer/next.config.ts" = "evals/viewer/next.config.ts"
+"viewer/package-lock.json" = "evals/viewer/package-lock.json"
+"viewer/package.json" = "evals/viewer/package.json"
+"viewer/postcss.config.mjs" = "evals/viewer/postcss.config.mjs"
+"viewer/tailwind.config.ts" = "evals/viewer/tailwind.config.ts"
+"viewer/tsconfig.json" = "evals/viewer/tsconfig.json"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

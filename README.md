@@ -19,7 +19,7 @@ python -m pip install -e .
 Install from GitHub:
 
 ```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.5.0"
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.5.1"
 ```
 
 After installing `pt-evals` into another repo, seed repo-root agent
@@ -294,17 +294,8 @@ The viewer is read-only. It shows an all-runs table, per-run item details, score
 matrices, step details, downloadable artifacts, and lane comparisons across
 `run + model_key` pairs.
 
-For this source-based version, install the viewer's Node dependencies once:
-
-```bash
-cd viewer
-npm install
-cd ..
-```
-
-Then run `pt-evals view <runs_dir>` from an editable checkout. If the viewer
-source lives somewhere else, set `PT_EVALS_VIEWER_DIR` to that `viewer/`
-directory before launching.
+The first launch installs the viewer's Node dependencies if they are missing.
+Node.js and npm must be available on `PATH`.
 
 ## Settings
 

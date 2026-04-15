@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -31,7 +32,21 @@ def viewer_dir() -> Path:
     override = os.environ.get("PT_EVALS_VIEWER_DIR")
     if override:
         return Path(override).expanduser().resolve()
-    return Path(__file__).resolve().parents[2] / "viewer"
+    source_checkout = Path(__file__).resolve().parents[2] / "viewer"
+    bundled_viewer = Path(__file__).resolve().parent / "viewer"
+    for candidate in (source_checkout, bundled_viewer):
+        if (candidate / "package.json").exists():
+            return candidate
+    return source_checkout
+
+
+def ensure_viewer_dependencies(app_dir: Path) -> None:
+    if (app_dir / "node_modules" / ".bin" / "next").exists():
+        return
+    if shutil.which("npm") is None:
+        raise FileNotFoundError("npm is required to start the viewer")
+    print(f"Installing viewer dependencies in {app_dir}", flush=True)
+    subprocess.run(["npm", "install"], cwd=app_dir, check=True)
 
 
 def run_viewer(
@@ -47,8 +62,7 @@ def run_viewer(
         raise FileNotFoundError(f"viewer app not found: {app_dir}")
     if not (app_dir / "package.json").exists():
         raise FileNotFoundError(f"viewer package not found: {app_dir / 'package.json'}")
-    if not (app_dir / "node_modules" / ".bin" / "next").exists():
-        raise FileNotFoundError(f"viewer dependencies are not installed; run npm install in {app_dir}")
+    ensure_viewer_dependencies(app_dir)
 
     env = os.environ.copy()
     env["PT_EVALS_RUNS_DIR"] = str(resolved_runs_dir)
