@@ -123,21 +123,14 @@ class ConsoleReporter:
             return
         self.console.print()
         self._print_score_table(records)
+        self._print_score_pivot_table(records)
         self._print_usage_table(records)
         self._print_latency_table(records)
         self._print_failure_table(records)
         self._print_artifacts(artifacts)
 
     def _print_score_table(self, records: list[ItemRunRecord]) -> None:
-        score_rows: dict[tuple[str, str, str, str], list[float]] = defaultdict(list)
-        for record in records:
-            for result in record.evals:
-                if result.key and result.score is not None and isinstance(result.score, (bool, int, float)):
-                    score_rows[("item_run", "", record.model_key, result.key)].append(float(result.score))
-            for step in record.steps:
-                for result in step.evals:
-                    if result.key and result.score is not None and isinstance(result.score, (bool, int, float)):
-                        score_rows[("step", step.key, record.model_key, result.key)].append(float(result.score))
+        score_rows = collect_score_values(records)
         table = Table(title="Scores By Model")
         table.add_column("Scope")
         table.add_column("Step")
@@ -151,6 +144,33 @@ class ConsoleReporter:
             for (scope, step_key, model_key, score_key), values in sorted(score_rows.items()):
                 mean = sum(values) / len(values)
                 table.add_row(scope, step_key or "-", model_key, score_key, f"{mean:.3f}", str(len(values)))
+        self.console.print(table)
+
+    def _print_score_pivot_table(self, records: list[ItemRunRecord]) -> None:
+        score_rows = collect_score_values(records)
+        model_keys = sorted({record.model_key for record in records})
+        eval_keys = sorted({(scope, step_key, score_key) for scope, step_key, _, score_key in score_rows})
+
+        table = Table(title="Scores By Eval")
+        table.add_column("Scope")
+        table.add_column("Step")
+        table.add_column("Score")
+        for model_key in model_keys:
+            table.add_column(model_key, justify="right")
+
+        if not eval_keys:
+            table.add_row("-", "-", "-", *("-" for _ in model_keys))
+        else:
+            for scope, step_key, score_key in eval_keys:
+                table.add_row(
+                    scope,
+                    step_key or "-",
+                    score_key,
+                    *(
+                        format_score_cell(score_rows.get((scope, step_key, model_key, score_key), []))
+                        for model_key in model_keys
+                    ),
+                )
         self.console.print(table)
 
     def _print_usage_table(self, records: list[ItemRunRecord]) -> None:
@@ -252,6 +272,26 @@ def first_failed_step(record: ItemRunRecord):
         if step.status == "failed":
             return step
     return None
+
+
+def collect_score_values(records: list[ItemRunRecord]) -> dict[tuple[str, str, str, str], list[float]]:
+    score_rows: dict[tuple[str, str, str, str], list[float]] = defaultdict(list)
+    for record in records:
+        for result in record.evals:
+            if result.key and result.score is not None and isinstance(result.score, (bool, int, float)):
+                score_rows[("item_run", "", record.model_key, result.key)].append(float(result.score))
+        for step in record.steps:
+            for result in step.evals:
+                if result.key and result.score is not None and isinstance(result.score, (bool, int, float)):
+                    score_rows[("step", step.key, record.model_key, result.key)].append(float(result.score))
+    return dict(score_rows)
+
+
+def format_score_cell(values: list[float]) -> str:
+    if not values:
+        return "-"
+    mean = sum(values) / len(values)
+    return f"{mean:.3f} ({len(values)})"
 
 
 def aggregate_usage_by_model(records: list[ItemRunRecord]) -> dict[str, UsageAggregate]:
