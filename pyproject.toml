@@ -16,6 +16,9 @@ dependencies = [
   "tenacity>=8.2.0",
 ]
 
+[project.scripts]
+pt-evals = "evals.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0.0",

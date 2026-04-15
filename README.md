@@ -22,6 +22,23 @@ Install from GitHub:
 python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.5"
 ```
 
+After installing `pt-evals` into another repo, seed repo-root agent
+instructions from that repo root:
+
+```bash
+python -m evals init
+```
+
+You can also run the installed console script:
+
+```bash
+pt-evals init
+```
+
+The init command creates `AGENTS.md` if it does not exist. If `AGENTS.md`
+already exists, it appends a marked `pt-evals` section unless that section is
+already present. Use `--force` to overwrite the file.
+
 ## Terminology
 
 - **Experiment**: the configured eval definition.
