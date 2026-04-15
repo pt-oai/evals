@@ -13,7 +13,6 @@ import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetSt
 
 import {
   formatNumber,
-  outputPreview,
   recordHasEvaluatorError,
   recordScore,
   scoreNumber,
@@ -163,16 +162,13 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
         id: "output",
         header: "Output",
         cell: ({ row }) => (
-          <button
-            type="button"
-            onClick={() => {
+          <OutputCell
+            text={row.original.output?.text ?? ""}
+            onOpen={() => {
               setSelected(row.original);
               setTab("output");
             }}
-            className="block max-h-24 min-w-80 overflow-hidden whitespace-pre-wrap text-left text-sm text-ink hover:text-leaf"
-          >
-            {outputPreview(row.original, 360) || "-"}
-          </button>
+          />
         ),
       }),
       columnHelper.display({
@@ -644,7 +640,205 @@ function RecordDrawer({
 }
 
 function TextPanel({ text }: { text: string }) {
-  return <pre className="whitespace-pre-wrap rounded-md border border-line bg-mist p-4 text-sm leading-6 text-ink">{text || "No output recorded."}</pre>;
+  return (
+    <div className="rounded-md border border-line bg-mist p-4">
+      <FormattedOutput text={text} />
+    </div>
+  );
+}
+
+function OutputCell({ text, onOpen }: { text: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="block max-h-24 min-w-80 overflow-hidden text-left text-sm text-ink hover:text-leaf"
+    >
+      <FormattedOutput text={text} compact />
+    </button>
+  );
+}
+
+function FormattedOutput({ text, compact = false }: { text: string; compact?: boolean }) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return <span className="text-sm text-slate-500">No output recorded.</span>;
+  }
+
+  const parsed = parseJsonText(trimmed);
+  if (parsed !== null) {
+    return (
+      <pre className={`whitespace-pre-wrap font-mono text-xs leading-5 text-ink ${compact ? "" : "overflow-auto"}`}>
+        {truncateText(JSON.stringify(parsed, null, 2), compact ? 900 : null)}
+      </pre>
+    );
+  }
+
+  const displayText = truncateText(trimmed, compact ? 900 : null);
+  if (looksLikeMarkdown(displayText)) {
+    return <MarkdownOutput text={displayText} compact={compact} />;
+  }
+
+  return <pre className="whitespace-pre-wrap text-sm leading-6 text-ink">{displayText}</pre>;
+}
+
+function MarkdownOutput({ text, compact }: { text: string; compact: boolean }) {
+  const blocks = markdownBlocks(text);
+  return (
+    <div className={compact ? "space-y-1 text-sm leading-5 text-ink" : "space-y-3 text-sm leading-6 text-ink"}>
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          return (
+            <div key={index} className={compact ? "font-semibold text-ink" : "text-base font-semibold text-ink"}>
+              {formatInlineMarkdown(block.text)}
+            </div>
+          );
+        }
+        if (block.type === "code") {
+          return (
+            <pre key={index} className="overflow-auto rounded-md border border-line bg-white p-3 font-mono text-xs leading-5 text-ink">
+              {block.text}
+            </pre>
+          );
+        }
+        if (block.type === "list") {
+          return (
+            <ul key={index} className="list-disc space-y-1 pl-5">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>{formatInlineMarkdown(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        return <p key={index}>{formatInlineMarkdown(block.text)}</p>;
+      })}
+    </div>
+  );
+}
+
+type MarkdownBlock =
+  | { type: "heading"; text: string }
+  | { type: "paragraph"; text: string }
+  | { type: "list"; items: string[] }
+  | { type: "code"; text: string };
+
+function markdownBlocks(text: string): MarkdownBlock[] {
+  const blocks: MarkdownBlock[] = [];
+  const lines = text.split(/\r?\n/);
+  let paragraph: string[] = [];
+  let list: string[] = [];
+  let code: string[] | null = null;
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      blocks.push({ type: "paragraph", text: paragraph.join(" ") });
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (list.length) {
+      blocks.push({ type: "list", items: list });
+      list = [];
+    }
+  };
+
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      if (code) {
+        blocks.push({ type: "code", text: code.join("\n") });
+        code = null;
+      } else {
+        flushParagraph();
+        flushList();
+        code = [];
+      }
+      continue;
+    }
+    if (code) {
+      code.push(line);
+      continue;
+    }
+    const heading = /^(#{1,4})\s+(.+)$/.exec(line.trim());
+    if (heading) {
+      flushParagraph();
+      flushList();
+      blocks.push({ type: "heading", text: heading[2] });
+      continue;
+    }
+    const bullet = /^\s*[-*]\s+(.+)$/.exec(line);
+    if (bullet) {
+      flushParagraph();
+      list.push(bullet[1]);
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    flushList();
+    paragraph.push(line.trim());
+  }
+
+  if (code) {
+    blocks.push({ type: "code", text: code.join("\n") });
+  }
+  flushParagraph();
+  flushList();
+  return blocks.length ? blocks : [{ type: "paragraph", text }];
+}
+
+function formatInlineMarkdown(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  let cursor = 0;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (index > cursor) {
+      nodes.push(text.slice(cursor, index));
+    }
+    const value = match[0];
+    if (value.startsWith("`")) {
+      nodes.push(
+        <code key={index} className="rounded bg-white px-1 font-mono text-xs text-ink">
+          {value.slice(1, -1)}
+        </code>,
+      );
+    } else {
+      nodes.push(
+        <strong key={index} className="font-semibold text-ink">
+          {value.slice(2, -2)}
+        </strong>,
+      );
+    }
+    cursor = index + value.length;
+  }
+  if (cursor < text.length) {
+    nodes.push(text.slice(cursor));
+  }
+  return nodes;
+}
+
+function parseJsonText(text: string): unknown | null {
+  if (!text.startsWith("{") && !text.startsWith("[")) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeMarkdown(text: string): boolean {
+  return /(^|\n)(#{1,4}\s+|[-*]\s+|```)|\*\*[^*]+\*\*|`[^`]+`/.test(text);
+}
+
+function truncateText(text: string, maxLength: number | null): string {
+  if (!maxLength || text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 3)}...`;
 }
 
 function ScoresPanel({ record, metrics }: { record: ItemRunRecord; metrics: ScoreMetric[] }) {
