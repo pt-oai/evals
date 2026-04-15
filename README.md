@@ -19,7 +19,7 @@ python -m pip install -e .
 Install from GitHub:
 
 ```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.1"
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.2"
 ```
 
 ## Terminology
