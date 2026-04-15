@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from pathlib import Path
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
+from rich.table import Table
+
+from evals.models import ExecutionRecord, ModelConfig
+
+
+class ConsoleReporter:
+    def __init__(self, display: str = "progress") -> None:
+        self.display = display
+        self.console = Console()
+        self.progress: Progress | None = None
+        self.overall_task: TaskID | None = None
+        self.model_tasks: dict[str, TaskID] = {}
+        self.completed = 0
+        self.failed = 0
+
+    def start(
+        self,
+        *,
+        experiment_name: str,
+        row_count: int,
+        model_count: int,
+        repetitions: int,
+        total_executions: int,
+        remaining_executions: int,
+        skipped: int,
+        run_dir: Path,
+        models: list[ModelConfig],
+        remaining_by_model: dict[str, int],
+    ) -> None:
+        if self.display == "quiet":
+            return
+        summary = (
+            f"[bold]{experiment_name}[/bold]\n"
+            f"Dataset rows: {row_count}\n"
+            f"Models: {model_count}\n"
+            f"Repetitions: {repetitions}\n"
+            f"Executions: {total_executions}"
+        )
+        if skipped:
+            summary += f"\nResumed: {skipped} already complete"
+        summary += f"\nOutput: {run_dir}"
+        self.console.print(Panel(summary, title="evals", border_style="cyan"))
+
+        if self.display in {"progress", "debug"}:
+            self.progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+                console=self.console,
+                transient=False,
+            )
+            self.progress.start()
+            self.overall_task = self.progress.add_task("overall", total=remaining_executions)
+            for model in models:
+                self.model_tasks[model.key] = self.progress.add_task(
+                    f"model:{model.key}", total=remaining_by_model.get(model.key, 0)
+                )
+
+    def record(self, record: ExecutionRecord) -> None:
+        if record.status == "failed":
+            self.failed += 1
+        else:
+            self.completed += 1
+
+        if self.progress is not None:
+            if self.overall_task is not None:
+                self.progress.advance(self.overall_task)
+                self.progress.update(
+                    self.overall_task,
+                    description=f"overall ok={self.completed} failed={self.failed}",
+                )
+            task = self.model_tasks.get(record.model_key)
+            if task is not None:
+                self.progress.advance(task)
+
+        if self.display == "debug":
+            style = "red" if record.status == "failed" else "green"
+            self.console.print(
+                f"[{style}]{record.status}[/{style}] "
+                f"row={record.row_id} model={record.model_key} repetition={record.repetition}"
+            )
+
+        if record.status == "failed" and self.display != "quiet":
+            message = record.error.message if record.error else "execution failed"
+            self.console.print(
+                f"[red]Failed[/red] row={record.row_id} "
+                f"model={record.model_key} repetition={record.repetition}: {message}"
+            )
+
+    def finish(self, records: list[ExecutionRecord], artifacts: dict[str, Path]) -> None:
+        if self.progress is not None:
+            self.progress.stop()
+        if self.display == "quiet":
+            return
+        self.console.print()
+        self._print_score_table(records)
+        self._print_usage_table(records)
+        self._print_latency_table(records)
+        self._print_failure_table(records)
+        self._print_artifacts(artifacts)
+
+    def _print_score_table(self, records: list[ExecutionRecord]) -> None:
+        rows: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for record in records:
+            for result in record.evals:
+                if result.key and result.score is not None and isinstance(result.score, (bool, int, float)):
+                    rows[(record.model_key, result.key)].append(float(result.score))
+        table = Table(title="Score Summary")
+        table.add_column("Model")
+        table.add_column("Score")
+        table.add_column("Mean", justify="right")
+        table.add_column("Count", justify="right")
+        if not rows:
+            table.add_row("-", "-", "-", "0")
+        else:
+            for (model_key, score_key), values in sorted(rows.items()):
+                mean = sum(values) / len(values)
+                table.add_row(model_key, score_key, f"{mean:.3f}", str(len(values)))
+        self.console.print(table)
+
+    def _print_usage_table(self, records: list[ExecutionRecord]) -> None:
+        usage = defaultdict(lambda: [0, 0, 0, 0, 0])
+        for record in records:
+            values = usage[record.model_key]
+            values[0] += record.usage.input_tokens
+            values[1] += record.usage.cached_tokens
+            values[2] += record.usage.output_tokens
+            values[3] += record.usage.reasoning_tokens
+            values[4] += record.usage.total_tokens
+        table = Table(title="Token Usage")
+        table.add_column("Model")
+        table.add_column("Input", justify="right")
+        table.add_column("Cached", justify="right")
+        table.add_column("Output", justify="right")
+        table.add_column("Reasoning", justify="right")
+        table.add_column("Total", justify="right")
+        if not usage:
+            table.add_row("-", "0", "0", "0", "0", "0")
+        else:
+            for model_key, values in sorted(usage.items()):
+                table.add_row(model_key, *(str(value) for value in values))
+        self.console.print(table)
+
+    def _print_latency_table(self, records: list[ExecutionRecord]) -> None:
+        latencies: dict[str, list[float]] = defaultdict(list)
+        for record in records:
+            if record.status == "success":
+                latencies[record.model_key].append(record.duration_s)
+        table = Table(title="Latency")
+        table.add_column("Model")
+        table.add_column("Avg", justify="right")
+        table.add_column("P50", justify="right")
+        table.add_column("P95", justify="right")
+        table.add_column("Max", justify="right")
+        if not latencies:
+            table.add_row("-", "-", "-", "-", "-")
+        else:
+            for model_key, values in sorted(latencies.items()):
+                values = sorted(values)
+                avg = sum(values) / len(values)
+                table.add_row(
+                    model_key,
+                    f"{avg:.3f}s",
+                    f"{percentile(values, 50):.3f}s",
+                    f"{percentile(values, 95):.3f}s",
+                    f"{max(values):.3f}s",
+                )
+        self.console.print(table)
+
+    def _print_failure_table(self, records: list[ExecutionRecord]) -> None:
+        failures = [record for record in records if record.status == "failed"]
+        table = Table(title="Failures")
+        table.add_column("Row")
+        table.add_column("Model")
+        table.add_column("Repetition")
+        table.add_column("Error")
+        if not failures:
+            table.add_row("-", "-", "-", "None")
+        else:
+            for record in failures[:20]:
+                table.add_row(
+                    record.row_id,
+                    record.model_key,
+                    str(record.repetition),
+                    record.error.message if record.error else "execution failed",
+                )
+        self.console.print(table)
+
+    def _print_artifacts(self, artifacts: dict[str, Path]) -> None:
+        table = Table(title="Artifacts")
+        table.add_column("Name")
+        table.add_column("Path")
+        for name, path in artifacts.items():
+            table.add_row(name, str(path))
+        self.console.print(table)
+
+
+def percentile(values: list[float], percent: int) -> float:
+    if not values:
+        return 0.0
+    if len(values) == 1:
+        return values[0]
+    index = (len(values) - 1) * (percent / 100)
+    lower = int(index)
+    upper = min(lower + 1, len(values) - 1)
+    weight = index - lower
+    return values[lower] * (1 - weight) + values[upper] * weight
