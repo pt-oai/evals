@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from evals._utils import to_jsonable
+from evals.artifacts import copy_artifacts as copy_user_artifacts
 from evals.models import ItemRunRecord, RunManifest, StepRecord
 
 
@@ -17,6 +18,7 @@ class Storage:
         self.results_csv_path = run_dir / "results.csv"
         self.scores_csv_path = run_dir / "scores.csv"
         self.steps_csv_path = run_dir / "steps.csv"
+        self.artifacts_dir = run_dir / "artifacts"
 
     def prepare(self, manifest: RunManifest) -> None:
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -56,14 +58,20 @@ class Storage:
         self._write_scores_csv(records)
         self._write_steps_csv(records)
 
+    def copy_artifacts(self, specs: list[str | Path], *, base_dir: Path) -> list[dict[str, Any]]:
+        return copy_user_artifacts(specs, base_dir=base_dir, artifacts_dir=self.artifacts_dir)
+
     def artifact_paths(self) -> dict[str, Path]:
-        return {
+        paths = {
             "manifest": self.manifest_path,
             "jsonl": self.results_jsonl_path,
             "results_csv": self.results_csv_path,
             "scores_csv": self.scores_csv_path,
             "steps_csv": self.steps_csv_path,
         }
+        if self.artifacts_dir.exists():
+            paths["artifacts"] = self.artifacts_dir
+        return paths
 
     def _write_results_csv(self, records: list[ItemRunRecord]) -> None:
         eval_keys = sorted(

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.4.5] - 2026-04-15
+
+### Added
+
+- `Experiment(..., artifacts=[...])` can copy prompt files, configs, and other user files into the run output folder.
+
 ## [0.4.4] - 2026-04-15
 
 ### Added

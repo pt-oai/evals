@@ -55,6 +55,11 @@ class Runner:
         )[:16]
         manifest = self._manifest(run_id)
         self.storage.prepare(manifest)
+        copied_artifacts = self.storage.copy_artifacts(list(exp.artifacts), base_dir=exp.base_dir)
+        if copied_artifacts:
+            manifest.metadata = dict(manifest.metadata)
+            manifest.metadata["copied_artifacts"] = copied_artifacts
+            self.storage.write_manifest(manifest)
         existing = self.storage.load_latest_records()
         successful_ids = {
             item_run_id
@@ -239,6 +244,7 @@ class Runner:
                 "fail_fast": exp.fail_fast,
                 "capture_raw": exp.capture_raw,
                 "timestamp_output_dir": exp.timestamp_output_dir,
+                "artifacts": [str(artifact) for artifact in exp.artifacts],
                 "display": exp.display,
             },
             model_configs=exp.registered_models,

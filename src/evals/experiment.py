@@ -30,6 +30,7 @@ class Experiment:
         fail_fast: bool = False,
         capture_raw: bool = True,
         timestamp_output_dir: bool = True,
+        artifacts: Iterable[str | Path] | None = None,
         display: str = "progress",
         metadata: dict[str, Any] | None = None,
         openai_client: Any | None = None,
@@ -48,6 +49,7 @@ class Experiment:
         self.fail_fast = fail_fast
         self.capture_raw = capture_raw
         self.timestamp_output_dir = timestamp_output_dir
+        self.artifacts = tuple(artifacts or ())
         self.display = display
         self.metadata = metadata or {}
         self.openai_client = openai_client

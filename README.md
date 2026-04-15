@@ -19,7 +19,7 @@ python -m pip install -e .
 Install from GitHub:
 
 ```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.4"
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.5"
 ```
 
 ## Terminology
@@ -250,13 +250,15 @@ runs/20260415-143205_qa_smoke/
   results.csv
   scores.csv
   steps.csv
+  artifacts/
 ```
 
-- `manifest.json` stores experiment-run settings, model configs, dataset hash, experiment hash, and environment metadata.
+- `manifest.json` stores experiment-run settings, model configs, dataset hash, experiment hash, copied artifact metadata, and environment metadata.
 - `results.jsonl` stores full item-run records, including raw request/response data, final output, step records, scores, usage, latency, and errors.
 - `results.csv` is a spreadsheet-friendly summary with one row per item run.
 - `scores.csv` is long-form score data with `scope` and `step_key` columns.
 - `steps.csv` is a spreadsheet-friendly summary with one row per step.
+- `artifacts/` contains files copied from `Experiment(..., artifacts=[...])`, such as prompt templates or run configs.
 
 The final console summary includes score tables by model and by eval key, plus average per-item-run and total token usage by model for input, cached, output, reasoning, and total tokens.
 
@@ -276,6 +278,7 @@ exp = Experiment(
     fail_fast=False,
     capture_raw=True,
     timestamp_output_dir=True,
+    artifacts=["prompts/system.md", "prompts/*.json"],
     display="progress",  # progress, quiet, debug
     metadata={"owner": "research"},
 )
