@@ -16,6 +16,12 @@ To install from GitHub after this repo is pushed:
 python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git"
 ```
 
+To pin a specific release:
+
+```bash
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.1.0"
+```
+
 ```bash
 python examples/qa_smoke.py
 ```
@@ -236,4 +242,23 @@ exp = Experiment(
     capture_raw=True,
     display="progress",  # "progress", "quiet", or "debug"
 )
+```
+
+## Versioning
+
+This project uses Semantic Versioning with Git tags:
+
+- Patch releases fix bugs without changing the public API.
+- Minor releases add features or adjust APIs while the project is pre-1.0.
+- Major releases are reserved for stable post-1.0 breaking changes.
+
+Release checklist:
+
+```bash
+python3 -m pytest
+git add pyproject.toml CHANGELOG.md README.md
+git commit -m "Release v0.1.0"
+git tag -a v0.1.0 -m "v0.1.0"
+git push
+git push origin v0.1.0
 ```
