@@ -19,7 +19,7 @@ python -m pip install -e .
 Install from GitHub:
 
 ```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.2"
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.3"
 ```
 
 ## Terminology
@@ -257,6 +257,8 @@ runs/20260415-143205_qa_smoke/
 - `results.csv` is a spreadsheet-friendly summary with one row per item run.
 - `scores.csv` is long-form score data with `scope` and `step_key` columns.
 - `steps.csv` is a spreadsheet-friendly summary with one row per step.
+
+The final console summary includes average per-item-run and total token usage by model for input, cached, output, reasoning, and total tokens.
 
 Set `timestamp_output_dir=False` to keep the stable `runs/qa_smoke/` folder shape.
 

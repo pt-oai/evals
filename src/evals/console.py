@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.console import Console
@@ -18,6 +19,12 @@ from rich.progress import (
 from rich.table import Table
 
 from evals.models import ItemRunRecord, ModelConfig
+
+
+@dataclass
+class UsageAggregate:
+    count: int = 0
+    totals: list[int] = field(default_factory=lambda: [0, 0, 0, 0, 0])
 
 
 class ConsoleReporter:
@@ -147,26 +154,28 @@ class ConsoleReporter:
         self.console.print(table)
 
     def _print_usage_table(self, records: list[ItemRunRecord]) -> None:
-        usage = defaultdict(lambda: [0, 0, 0, 0, 0])
-        for record in records:
-            values = usage[record.model_key]
-            values[0] += record.usage.input_tokens
-            values[1] += record.usage.cached_tokens
-            values[2] += record.usage.output_tokens
-            values[3] += record.usage.reasoning_tokens
-            values[4] += record.usage.total_tokens
-        table = Table(title="Token Usage")
+        usage = aggregate_usage_by_model(records)
+        table = Table(title="Token Usage By Model")
         table.add_column("Model")
+        table.add_column("Item Runs", justify="right")
+        table.add_column("Metric")
         table.add_column("Input", justify="right")
         table.add_column("Cached", justify="right")
         table.add_column("Output", justify="right")
         table.add_column("Reasoning", justify="right")
         table.add_column("Total", justify="right")
         if not usage:
-            table.add_row("-", "0", "0", "0", "0", "0")
+            table.add_row("-", "0", "avg/item run", "0.0", "0.0", "0.0", "0.0", "0.0")
+            table.add_row("-", "0", "total", "0", "0", "0", "0", "0")
         else:
-            for model_key, values in sorted(usage.items()):
-                table.add_row(model_key, *(str(value) for value in values))
+            for model_key, stats in sorted(usage.items()):
+                table.add_row(
+                    model_key,
+                    str(stats.count),
+                    "avg/item run",
+                    *(f"{value / stats.count:.1f}" for value in stats.totals),
+                )
+                table.add_row(model_key, str(stats.count), "total", *(str(value) for value in stats.totals))
         self.console.print(table)
 
     def _print_latency_table(self, records: list[ItemRunRecord]) -> None:
@@ -243,3 +252,17 @@ def first_failed_step(record: ItemRunRecord):
         if step.status == "failed":
             return step
     return None
+
+
+def aggregate_usage_by_model(records: list[ItemRunRecord]) -> dict[str, UsageAggregate]:
+    usage: dict[str, UsageAggregate] = defaultdict(UsageAggregate)
+    for record in records:
+        stats = usage[record.model_key]
+        stats.count += 1
+        totals = stats.totals
+        totals[0] += record.usage.input_tokens
+        totals[1] += record.usage.cached_tokens
+        totals[2] += record.usage.output_tokens
+        totals[3] += record.usage.reasoning_tokens
+        totals[4] += record.usage.total_tokens
+    return dict(usage)
