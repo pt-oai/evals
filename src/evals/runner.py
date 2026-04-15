@@ -238,6 +238,7 @@ class Runner:
                 "max_retries": exp.max_retries,
                 "fail_fast": exp.fail_fast,
                 "capture_raw": exp.capture_raw,
+                "timestamp_output_dir": exp.timestamp_output_dir,
                 "display": exp.display,
             },
             model_configs=exp.registered_models,

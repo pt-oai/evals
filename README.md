@@ -19,7 +19,7 @@ python -m pip install -e .
 Install from GitHub:
 
 ```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.0"
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.1"
 ```
 
 ## Terminology
@@ -241,10 +241,10 @@ exp.eval("manual_score", manual_score)
 
 ## Outputs
 
-For `Experiment(name="qa_smoke", output_dir="runs")`, results are written to:
+For `Experiment(name="qa_smoke", output_dir="runs")`, results are written to a timestamp-prefixed folder:
 
 ```text
-runs/qa_smoke/
+runs/20260415-143205_qa_smoke/
   manifest.json
   results.jsonl
   results.csv
@@ -257,6 +257,8 @@ runs/qa_smoke/
 - `results.csv` is a spreadsheet-friendly summary with one row per item run.
 - `scores.csv` is long-form score data with `scope` and `step_key` columns.
 - `steps.csv` is a spreadsheet-friendly summary with one row per step.
+
+Set `timestamp_output_dir=False` to keep the stable `runs/qa_smoke/` folder shape.
 
 ## Settings
 
@@ -271,6 +273,7 @@ exp = Experiment(
     max_retries=3,
     fail_fast=False,
     capture_raw=True,
+    timestamp_output_dir=True,
     display="progress",  # progress, quiet, debug
     metadata={"owner": "research"},
 )

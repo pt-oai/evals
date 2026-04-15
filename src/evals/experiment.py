@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Callable, Iterable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ class Experiment:
         max_retries: int = 3,
         fail_fast: bool = False,
         capture_raw: bool = True,
+        timestamp_output_dir: bool = True,
         display: str = "progress",
         metadata: dict[str, Any] | None = None,
         openai_client: Any | None = None,
@@ -45,12 +47,15 @@ class Experiment:
         self.max_retries = max_retries
         self.fail_fast = fail_fast
         self.capture_raw = capture_raw
+        self.timestamp_output_dir = timestamp_output_dir
         self.display = display
         self.metadata = metadata or {}
         self.openai_client = openai_client
         self._models: list[ModelConfig] = []
         self._workflow: WorkflowFn | None = None
         self._evals: list[EvalDefinition] = []
+        self._output_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") if timestamp_output_dir else None
+        self._run_dir: Path | None = None
 
     @property
     def source_file(self) -> Path | None:
@@ -131,7 +136,10 @@ class Experiment:
             raise ValueError("a workflow callable must be assigned to exp.workflow")
 
     def run_dir(self) -> Path:
-        return self.output_dir / self.name
+        if self._run_dir is None:
+            dirname = f"{self._output_timestamp}_{self.name}" if self._output_timestamp else self.name
+            self._run_dir = self.output_dir / dirname
+        return self._run_dir
 
     def _resolve_path(self, value: str | Path) -> Path:
         path = Path(value)

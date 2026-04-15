@@ -224,7 +224,7 @@ def test_builtin_scores_are_persisted_to_csv_files(tmp_path, fake_client):
     records = exp.run()
     assert records[0].evals[0].score is True
 
-    run_dir = tmp_path / "runs" / "persist"
+    run_dir = exp.run_dir()
     with (run_dir / "results.csv").open("r", encoding="utf-8") as handle:
         result_rows = list(csv.DictReader(handle))
     assert result_rows[0]["score:score_equal"] == "True"

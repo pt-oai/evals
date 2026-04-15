@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.4.1] - 2026-04-15
+
+### Added
+
+- Timestamp-prefixed output directories by default, with `timestamp_output_dir=False` to keep stable experiment folders.
+
 ## [0.4.0] - 2026-04-15
 
 ### Added

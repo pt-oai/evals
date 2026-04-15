@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from evals import Experiment, ModelConfig
@@ -40,6 +42,23 @@ def test_rejects_duplicate_model_keys(tmp_path):
     exp.model(ModelConfig(key="m1", model="gpt-test"))
     with pytest.raises(ValueError, match="duplicate model key"):
         exp.model(ModelConfig(key="m1", model="gpt-test"))
+
+
+def test_run_dir_is_timestamp_prefixed_by_default(tmp_path):
+    exp = Experiment(name="demo", dataset=write_dataset(tmp_path), output_dir=tmp_path / "runs")
+    assert exp.run_dir().parent == tmp_path / "runs"
+    assert re.fullmatch(r"\d{8}-\d{6}_demo", exp.run_dir().name)
+    assert exp.run_dir() == exp.run_dir()
+
+
+def test_run_dir_timestamp_prefix_can_be_disabled(tmp_path):
+    exp = Experiment(
+        name="demo",
+        dataset=write_dataset(tmp_path),
+        output_dir=tmp_path / "runs",
+        timestamp_output_dir=False,
+    )
+    assert exp.run_dir() == tmp_path / "runs" / "demo"
 
 
 def test_workflow_must_be_callable(tmp_path):

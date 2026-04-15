@@ -78,7 +78,7 @@ def test_runner_executes_item_model_matrix_and_writes_artifacts(tmp_path, fake_c
     assert all(record.usage.output_tokens == 5 for record in records)
     assert all(record.usage.reasoning_tokens == 2 for record in records)
 
-    run_dir = tmp_path / "runs" / "demo"
+    run_dir = exp.run_dir()
     assert (run_dir / "manifest.json").exists()
     assert (run_dir / "results.jsonl").exists()
     assert (run_dir / "results.csv").exists()
@@ -266,7 +266,7 @@ def test_item_run_records_multiple_steps_and_step_evals(tmp_path, fake_client):
     assert record.steps[1].evals[0].score is True
     assert record.usage.input_tokens == 3
 
-    run_dir = tmp_path / "runs" / "steps"
+    run_dir = exp.run_dir()
     with (run_dir / "results.csv").open("r", encoding="utf-8") as handle:
         result_rows = list(csv.DictReader(handle))
     assert result_rows[0]["step:draft.score:draft_has_text"] == "True"
