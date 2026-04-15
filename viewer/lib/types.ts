@@ -1,0 +1,204 @@
+export type Status = "success" | "failed" | "skipped";
+export type ScoreValue = boolean | number;
+export type ScoreType = "BOOLEAN" | "NUMERIC";
+
+export interface TokenUsage {
+  input_tokens: number;
+  cached_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+}
+
+export interface ErrorRecord {
+  type: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface TaskOutput {
+  text: string;
+  value?: unknown;
+  metadata?: Record<string, unknown>;
+}
+
+export interface EvalResult {
+  key?: string | null;
+  score?: ScoreValue | null;
+  data_type?: ScoreType | null;
+  description?: string | null;
+  comment?: string | null;
+  metadata?: Record<string, unknown>;
+  error?: ErrorRecord | null;
+}
+
+export interface GenerationRecord {
+  response_id?: string | null;
+  latency_s: number;
+  usage: TokenUsage;
+  raw_request?: unknown;
+  raw_response?: unknown;
+  output_text: string;
+  error?: ErrorRecord | null;
+}
+
+export interface StepRecord {
+  key: string;
+  status: Status;
+  started_at: string;
+  ended_at: string;
+  duration_s: number;
+  output?: TaskOutput | null;
+  evals: EvalResult[];
+  usage: TokenUsage;
+  response_id?: string | null;
+  generations: GenerationRecord[];
+  error?: ErrorRecord | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ModelConfig {
+  key: string;
+  model: string;
+  params?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ItemRunRecord {
+  item_run_id: string;
+  run_id: string;
+  experiment_name: string;
+  item_index: number;
+  item_id: string;
+  item: Record<string, string>;
+  model_key: string;
+  model: string;
+  model_params?: Record<string, unknown>;
+  repetition: number;
+  status: Status;
+  started_at: string;
+  ended_at: string;
+  duration_s: number;
+  output?: TaskOutput | null;
+  evals: EvalResult[];
+  usage: TokenUsage;
+  response_id?: string | null;
+  generations: GenerationRecord[];
+  steps: StepRecord[];
+  raw_input?: unknown;
+  raw_output?: unknown;
+  error?: ErrorRecord | null;
+}
+
+export interface RunManifest {
+  run_id: string;
+  experiment_name: string;
+  started_at: string;
+  ended_at?: string | null;
+  dataset_path: string;
+  dataset_sha256?: string | null;
+  experiment_file?: string | null;
+  experiment_sha256?: string | null;
+  output_dir: string;
+  settings?: Record<string, unknown>;
+  model_configs: ModelConfig[];
+  metadata?: Record<string, unknown>;
+  git_commit?: string | null;
+  python_version?: string | null;
+}
+
+export interface ScoreMetric {
+  id: string;
+  scope: "item_run" | "step";
+  stepKey: string;
+  scoreKey: string;
+  label: string;
+}
+
+export interface ScoreAggregate extends ScoreMetric {
+  mean: number | null;
+  count: number;
+  errorCount: number;
+}
+
+export interface LatencySummary {
+  avg: number | null;
+  p50: number | null;
+  p95: number | null;
+  max: number | null;
+}
+
+export interface RunSummary {
+  key: string;
+  path: string;
+  runId: string;
+  experimentName: string;
+  status: "running" | "complete" | "needs_review" | "empty";
+  startedAt: string;
+  endedAt?: string | null;
+  datasetPath: string;
+  datasetSha256?: string | null;
+  experimentFile?: string | null;
+  experimentSha256?: string | null;
+  gitCommit?: string | null;
+  modelKeys: string[];
+  itemRunCount: number;
+  successCount: number;
+  failedCount: number;
+  evaluatorErrorCount: number;
+  totalTokens: number;
+  latency: LatencySummary;
+  scoreAggregates: ScoreAggregate[];
+  artifacts: ArtifactFile[];
+}
+
+export interface ArtifactFile {
+  name: string;
+  href: string;
+}
+
+export interface RunDetail {
+  summary: RunSummary;
+  manifest: RunManifest;
+  records: ItemRunRecord[];
+  metrics: ScoreMetric[];
+  itemFields: string[];
+  stepKeys: string[];
+}
+
+export interface Lane {
+  id: string;
+  runKey: string;
+  modelKey: string;
+  label: string;
+}
+
+export interface ScoreDelta {
+  metric: ScoreMetric;
+  baseline: ScoreValue | null;
+  candidate: ScoreValue | null;
+  delta: number | null;
+}
+
+export interface CompareRow {
+  id: string;
+  itemId: string;
+  repetition: number;
+  baselineRecord?: ItemRunRecord;
+  candidateRecord?: ItemRunRecord;
+  scoreDeltas: ScoreDelta[];
+  latencyDeltaS: number | null;
+  totalTokensDelta: number | null;
+  changed: boolean;
+  regression: boolean;
+  newFailure: boolean;
+  slower: boolean;
+  moreTokens: boolean;
+}
+
+export interface CompareResult {
+  baseline: Lane;
+  candidate: Lane;
+  metrics: ScoreMetric[];
+  rows: CompareRow[];
+}

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.5.0] - 2026-04-15
+
+### Added
+
+- `pt-evals view <runs_dir>` opens a read-only local Next.js viewer for parent directories of eval runs.
+- Viewer pages for all runs, run detail, score matrices, artifact downloads, and lane comparisons across `run + model_key` pairs.
+
 ## [0.4.5] - 2026-04-15
 
 ### Added

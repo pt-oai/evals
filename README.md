@@ -19,7 +19,7 @@ python -m pip install -e .
 Install from GitHub:
 
 ```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.4.5"
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.5.0"
 ```
 
 After installing `pt-evals` into another repo, seed repo-root agent
@@ -280,6 +280,31 @@ runs/20260415-143205_qa_smoke/
 The final console summary includes score tables by model and by eval key, plus average per-item-run and total token usage by model for input, cached, output, reasoning, and total tokens.
 
 Set `timestamp_output_dir=False` to keep the stable `runs/qa_smoke/` folder shape.
+
+## Local Viewer
+
+The local viewer opens a parent runs directory and shows every child run folder
+that contains `manifest.json`:
+
+```bash
+pt-evals view runs/
+```
+
+The viewer is read-only. It shows an all-runs table, per-run item details, score
+matrices, step details, downloadable artifacts, and lane comparisons across
+`run + model_key` pairs.
+
+For this source-based version, install the viewer's Node dependencies once:
+
+```bash
+cd viewer
+npm install
+cd ..
+```
+
+Then run `pt-evals view <runs_dir>` from an editable checkout. If the viewer
+source lives somewhere else, set `PT_EVALS_VIEWER_DIR` to that `viewer/`
+directory before launching.
 
 ## Settings
 
