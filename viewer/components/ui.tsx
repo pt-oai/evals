@@ -17,10 +17,12 @@ export function StatusBadge({ status }: { status: RunSummary["status"] | "succes
 
 export function PageTitle({
   eyebrow,
+  subtitle,
   title,
   children,
 }: {
   eyebrow?: string;
+  subtitle?: ReactNode;
   title: string;
   children?: ReactNode;
 }) {
@@ -29,6 +31,7 @@ export function PageTitle({
       <div>
         {eyebrow ? <p className="mb-1 text-sm font-semibold uppercase tracking-normal text-leaf">{eyebrow}</p> : null}
         <h1 className="text-3xl font-semibold text-ink md:text-4xl">{title}</h1>
+        {subtitle ? <div className="mt-2 text-sm text-slate-500">{subtitle}</div> : null}
       </div>
       {children}
     </div>
