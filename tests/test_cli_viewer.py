@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from evals.cli import ensure_viewer_dependencies, main, validate_runs_parent, viewer_dir
+from evals.cli import (
+    ensure_viewer_dependencies,
+    main,
+    validate_runs_parent,
+    viewer_dependencies_installed,
+    viewer_dir,
+)
 
 
 def test_validate_runs_parent_rejects_missing_directory(tmp_path):
@@ -51,6 +57,8 @@ def test_ensure_viewer_dependencies_skips_existing_install(tmp_path, monkeypatch
     bin_dir = app_dir / "node_modules" / ".bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "next").write_text("", encoding="utf-8")
+    (app_dir / "node_modules" / "next").mkdir()
+    (app_dir / "package.json").write_text('{"dependencies":{"next":"^15.0.0"}}', encoding="utf-8")
 
     def fail_run(*args, **kwargs):
         raise AssertionError("npm install should not run")
@@ -58,6 +66,19 @@ def test_ensure_viewer_dependencies_skips_existing_install(tmp_path, monkeypatch
     monkeypatch.setattr("evals.cli.subprocess.run", fail_run)
 
     ensure_viewer_dependencies(app_dir)
+
+
+def test_viewer_dependencies_installed_detects_missing_dependency(tmp_path):
+    app_dir = tmp_path / "viewer"
+    (app_dir / "node_modules" / ".bin").mkdir(parents=True)
+    (app_dir / "node_modules" / ".bin" / "next").write_text("", encoding="utf-8")
+    (app_dir / "node_modules" / "next").mkdir()
+    (app_dir / "package.json").write_text(
+        '{"dependencies":{"next":"^15.0.0","recharts":"^3.0.0"}}',
+        encoding="utf-8",
+    )
+
+    assert not viewer_dependencies_installed(app_dir)
 
 
 def test_ensure_viewer_dependencies_runs_npm_install(tmp_path, monkeypatch):

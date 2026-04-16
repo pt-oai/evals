@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -41,12 +42,28 @@ def viewer_dir() -> Path:
 
 
 def ensure_viewer_dependencies(app_dir: Path) -> None:
-    if (app_dir / "node_modules" / ".bin" / "next").exists():
+    if viewer_dependencies_installed(app_dir):
         return
     if shutil.which("npm") is None:
         raise FileNotFoundError("npm is required to start the viewer")
     print(f"Installing viewer dependencies in {app_dir}", flush=True)
     subprocess.run(["npm", "install"], cwd=app_dir, check=True)
+
+
+def viewer_dependencies_installed(app_dir: Path) -> bool:
+    if not (app_dir / "node_modules" / ".bin" / "next").exists():
+        return False
+    package_json = app_dir / "package.json"
+    if not package_json.exists():
+        return False
+    package_data = json.loads(package_json.read_text(encoding="utf-8"))
+    dependencies = package_data.get("dependencies", {})
+    if not isinstance(dependencies, dict):
+        return False
+    for name in dependencies:
+        if not (app_dir / "node_modules" / Path(*name.split("/"))).exists():
+            return False
+    return True
 
 
 def run_viewer(
