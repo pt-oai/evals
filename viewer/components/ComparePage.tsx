@@ -11,6 +11,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { outputPreview, recordHasEvaluatorError, statusLabel } from "../lib/evals";
+import {
+  defaultComparePreferences,
+  effectiveId,
+  effectiveSorting,
+  missingReference,
+  readComparePreferences,
+  savedReference,
+  writeComparePreferences,
+  type SavedReference,
+} from "../lib/preferences";
 import type { CompareResult, CompareRow, Lane } from "../lib/types";
 import { formatInt, formatScore, formatSeconds } from "./format";
 import {
@@ -31,11 +41,11 @@ const columnHelper = createColumnHelper<CompareRow>();
 
 export function ComparePage() {
   const [lanes, setLanes] = useState<Lane[]>([]);
-  const [baselineId, setBaselineId] = useState("");
-  const [candidateId, setCandidateId] = useState("");
+  const [baselineLane, setBaselineLane] = useState<SavedReference | null>(null);
+  const [candidateLane, setCandidateLane] = useState<SavedReference | null>(null);
   const [result, setResult] = useState<CompareResult | null>(null);
   const [query, setQuery] = useState("");
-  const [scoreFilter, setScoreFilter] = useState("");
+  const [scoreFilter, setScoreFilter] = useState<SavedReference | null>(null);
   const [regressionsOnly, setRegressionsOnly] = useState(false);
   const [newFailuresOnly, setNewFailuresOnly] = useState(false);
   const [changedOnly, setChangedOnly] = useState(false);
@@ -44,8 +54,26 @@ export function ComparePage() {
   const [failedOnly, setFailedOnly] = useState(false);
   const [evalErrorsOnly, setEvalErrorsOnly] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const preferences = readComparePreferences();
+    setBaselineLane(preferences.baselineLane);
+    setCandidateLane(preferences.candidateLane);
+    setQuery(preferences.query);
+    setScoreFilter(preferences.scoreFilter);
+    setRegressionsOnly(preferences.regressionsOnly);
+    setNewFailuresOnly(preferences.newFailuresOnly);
+    setChangedOnly(preferences.changedOnly);
+    setSlowerOnly(preferences.slowerOnly);
+    setMoreTokensOnly(preferences.moreTokensOnly);
+    setFailedOnly(preferences.failedOnly);
+    setEvalErrorsOnly(preferences.evalErrorsOnly);
+    setSorting(preferences.sorting);
+    setPreferencesLoaded(true);
+  }, []);
 
   useEffect(() => {
     fetch("/api/compare")
@@ -60,13 +88,18 @@ export function ComparePage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const laneReferences = useMemo(() => lanes.map((lane) => savedReference(lane.id, lane.label)), [lanes]);
+  const laneIds = useMemo(() => laneReferences.map((reference) => reference.id), [laneReferences]);
+  const baselineId = baselineLane?.id ?? "";
+  const candidateId = candidateLane?.id ?? "";
+
   useEffect(() => {
-    if (!lanes.length || baselineId || candidateId) {
+    if (!preferencesLoaded || !laneReferences.length || baselineLane || candidateLane) {
       return;
     }
-    setBaselineId(lanes[0].id);
-    setCandidateId(lanes[Math.min(1, lanes.length - 1)].id);
-  }, [baselineId, candidateId, lanes]);
+    setBaselineLane(laneReferences[0]);
+    setCandidateLane(laneReferences[Math.min(1, laneReferences.length - 1)]);
+  }, [baselineLane, candidateLane, laneReferences, preferencesLoaded]);
 
   useEffect(() => {
     const baseline = lanes.find((lane) => lane.id === baselineId);
@@ -91,6 +124,13 @@ export function ComparePage() {
       })
       .catch((caught: Error) => setError(caught.message));
   }, [baselineId, candidateId, lanes]);
+
+  const metricReferences = useMemo(
+    () => (result?.metrics ?? []).map((metric) => savedReference(metric.id, metric.label)),
+    [result?.metrics],
+  );
+  const metricIds = useMemo(() => metricReferences.map((reference) => reference.id), [metricReferences]);
+  const effectiveScoreFilter = useMemo(() => effectiveId(scoreFilter, metricIds), [metricIds, scoreFilter]);
 
   const filteredRows = useMemo(() => {
     if (!result) {
@@ -123,7 +163,7 @@ export function ComparePage() {
       ) {
         return false;
       }
-      if (scoreFilter && !row.scoreDeltas.some((delta) => delta.metric.id === scoreFilter && delta.delta !== null)) {
+      if (effectiveScoreFilter && !row.scoreDeltas.some((delta) => delta.metric.id === effectiveScoreFilter && delta.delta !== null)) {
         return false;
       }
       if (!needle) {
@@ -145,19 +185,20 @@ export function ComparePage() {
   }, [
     changedOnly,
     evalErrorsOnly,
+    effectiveScoreFilter,
     failedOnly,
     moreTokensOnly,
     newFailuresOnly,
     query,
     regressionsOnly,
     result,
-    scoreFilter,
     slowerOnly,
   ]);
 
   const columns = useMemo(
     () => [
       columnHelper.accessor("itemId", {
+        id: "itemId",
         header: "Item",
         cell: ({ row }) => (
           <div className="min-w-32">
@@ -220,10 +261,12 @@ export function ComparePage() {
         ),
       }),
       columnHelper.accessor("latencyDeltaS", {
+        id: "latencyDeltaS",
         header: "Time",
         cell: ({ getValue }) => signedSeconds(getValue()),
       }),
       columnHelper.accessor("totalTokensDelta", {
+        id: "totalTokensDelta",
         header: "Tokens",
         cell: ({ getValue }) => signedInt(getValue()),
       }),
@@ -231,10 +274,13 @@ export function ComparePage() {
     [],
   );
 
+  const columnIds = useMemo(() => columns.map((column) => column.id).filter((id): id is string => Boolean(id)), [columns]);
+  const tableSorting = useMemo(() => effectiveSorting(sorting, columnIds), [sorting, columnIds]);
+
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { sorting },
+    state: { sorting: tableSorting },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -249,6 +295,48 @@ export function ComparePage() {
       changed: rows.filter((row) => row.changed).length,
     };
   }, [result]);
+  const laneSelectionMissing =
+    Boolean(baselineLane && !laneIds.includes(baselineLane.id)) ||
+    Boolean(candidateLane && !laneIds.includes(candidateLane.id));
+
+  useEffect(() => {
+    if (!preferencesLoaded || loading || error) {
+      return;
+    }
+    writeComparePreferences({
+      version: defaultComparePreferences.version,
+      baselineLane: refreshReference(baselineLane, laneReferences),
+      candidateLane: refreshReference(candidateLane, laneReferences),
+      query,
+      scoreFilter: refreshReference(scoreFilter, metricReferences),
+      regressionsOnly,
+      newFailuresOnly,
+      changedOnly,
+      slowerOnly,
+      moreTokensOnly,
+      failedOnly,
+      evalErrorsOnly,
+      sorting,
+    });
+  }, [
+    baselineLane,
+    candidateLane,
+    changedOnly,
+    error,
+    evalErrorsOnly,
+    failedOnly,
+    laneReferences,
+    loading,
+    metricReferences,
+    moreTokensOnly,
+    newFailuresOnly,
+    preferencesLoaded,
+    query,
+    regressionsOnly,
+    scoreFilter,
+    slowerOnly,
+    sorting,
+  ]);
 
   if (loading) {
     return <LoadingState />;
@@ -269,14 +357,24 @@ export function ComparePage() {
       </PageTitle>
 
       <Toolbar>
-        <SelectInput value={baselineId} onChange={(event) => setBaselineId(event.target.value)} aria-label="Baseline">
+        <SelectInput value={baselineId} onChange={(event) => setBaselineLane(referenceForId(event.target.value, laneReferences))} aria-label="Baseline">
+          {missingReference(baselineLane, laneIds) ? (
+            <option value={baselineLane?.id ?? ""} disabled>
+              {baselineLane?.label ?? "Lane unavailable"} (Unavailable)
+            </option>
+          ) : null}
           {lanes.map((lane) => (
             <option key={lane.id} value={lane.id}>
               {lane.label}
             </option>
           ))}
         </SelectInput>
-        <SelectInput value={candidateId} onChange={(event) => setCandidateId(event.target.value)} aria-label="Candidate">
+        <SelectInput value={candidateId} onChange={(event) => setCandidateLane(referenceForId(event.target.value, laneReferences))} aria-label="Candidate">
+          {missingReference(candidateLane, laneIds) ? (
+            <option value={candidateLane?.id ?? ""} disabled>
+              {candidateLane?.label ?? "Lane unavailable"} (Unavailable)
+            </option>
+          ) : null}
           {lanes.map((lane) => (
             <option key={lane.id} value={lane.id}>
               {lane.label}
@@ -294,8 +392,13 @@ export function ComparePage() {
 
       <Toolbar>
         <SearchInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search items" />
-        <SelectInput value={scoreFilter} onChange={(event) => setScoreFilter(event.target.value)} aria-label="Score">
+        <SelectInput value={scoreFilter?.id ?? ""} onChange={(event) => setScoreFilter(referenceForId(event.target.value, metricReferences))} aria-label="Score">
           <option value="">All scores</option>
+          {missingReference(scoreFilter, metricIds) ? (
+            <option value={scoreFilter?.id ?? ""} disabled>
+              {scoreFilter?.label ?? "Score unavailable"} (Unavailable)
+            </option>
+          ) : null}
           {(result?.metrics ?? []).map((metric) => (
             <option key={metric.id} value={metric.id}>
               {metric.label}
@@ -311,7 +414,11 @@ export function ComparePage() {
         <Toggle checked={evalErrorsOnly} onChange={setEvalErrorsOnly} label="Eval errors" />
       </Toolbar>
 
-      <DataTable table={table} empty="No matching comparisons." />
+      {laneSelectionMissing || !result ? (
+        <EmptyState title="Choose lanes to compare" body="Pick available run lanes to compare." />
+      ) : (
+        <DataTable table={table} empty="No matching comparisons." />
+      )}
     </>
   );
 }
@@ -330,4 +437,18 @@ function signedInt(value: number | null): string {
   }
   const prefix = value > 0 ? "+" : "";
   return `${prefix}${formatInt(value)}`;
+}
+
+function referenceForId(id: string, references: SavedReference[]): SavedReference | null {
+  if (!id) {
+    return null;
+  }
+  return references.find((reference) => reference.id === id) ?? savedReference(id);
+}
+
+function refreshReference(reference: SavedReference | null, available: SavedReference[]): SavedReference | null {
+  if (!reference) {
+    return null;
+  }
+  return available.find((item) => item.id === reference.id) ?? reference;
 }

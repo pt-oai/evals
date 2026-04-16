@@ -5,6 +5,7 @@ import {
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
+  type Column,
   type ColumnOrderState,
   type Row,
   type SortingState,
@@ -24,12 +25,25 @@ import {
 } from "recharts";
 
 import { formatNumber } from "../lib/evals";
+import {
+  defaultRunsPreferences,
+  effectiveColumnOrder,
+  effectiveColumnVisibility,
+  effectiveSorting,
+  mergeSavedReferences,
+  readRunsPreferences,
+  referenceLabels,
+  referencesFromIds,
+  savedReference,
+  writeRunsPreferences,
+  type SavedReference,
+} from "../lib/preferences";
 import type { ModelRunSummary, RunSummary, ScoreAggregate } from "../lib/types";
 import { formatDate, formatInt, formatSeconds, formatShortHash } from "./format";
 import { DataTable, EmptyState, ErrorState, LoadingState, PageTitle } from "./ui";
 
 type ModelRunRow = ModelRunSummary & { runGroupIndex: number; runItemsLabel: string };
-type ChartConfig = { id: string; metricId: string };
+type ChartConfig = { id: string; metricId: string; label?: string; group?: string };
 type ChartMetric = {
   id: string;
   label: string;
@@ -60,13 +74,27 @@ export function RunsPage() {
   const [sorting, setSorting] = useState<SortingState>([{ id: "started", desc: true }]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
+  const [columnLabels, setColumnLabels] = useState<Record<string, string>>({});
   const [hiddenModelKeys, setHiddenModelKeys] = useState<string[]>([]);
   const [charts, setCharts] = useState<ChartConfig[]>([]);
   const [chartsTouched, setChartsTouched] = useState(false);
   const [chartDraftMetricId, setChartDraftMetricId] = useState("");
   const [expandedChartId, setExpandedChartId] = useState<string | null>(null);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const preferences = readRunsPreferences();
+    setHiddenModelKeys(preferences.hiddenModelKeys);
+    setCharts(preferences.charts);
+    setChartsTouched(preferences.chartsCustomized);
+    setSorting(preferences.sorting.length ? preferences.sorting : defaultRunsPreferences.sorting);
+    setColumnVisibility(preferences.columnVisibility);
+    setColumnOrder(preferences.columnOrder.map((reference) => reference.id));
+    setColumnLabels(referenceLabels(preferences.columnOrder));
+    setPreferencesLoaded(true);
+  }, []);
 
   useEffect(() => {
     fetch("/api/runs")
@@ -96,11 +124,14 @@ export function RunsPage() {
   );
 
   const modelOptions = useMemo(() => [...new Set(modelRows.map((row) => row.modelKey))].sort(), [modelRows]);
-  const modelOptionsKey = modelOptions.join("|");
-
-  useEffect(() => {
-    setHiddenModelKeys((current) => current.filter((modelKey) => modelOptions.includes(modelKey)));
-  }, [modelOptionsKey, modelOptions]);
+  const effectiveHiddenModelKeys = useMemo(
+    () => hiddenModelKeys.filter((modelKey) => modelOptions.includes(modelKey)),
+    [hiddenModelKeys, modelOptions],
+  );
+  const missingHiddenModelKeys = useMemo(
+    () => hiddenModelKeys.filter((modelKey) => !modelOptions.includes(modelKey)),
+    [hiddenModelKeys, modelOptions],
+  );
 
   const scoreMetrics = useMemo(() => {
     const metrics = new Map<string, ScoreAggregate>();
@@ -118,21 +149,23 @@ export function RunsPage() {
   const chartMetricsKey = chartMetrics.map((metric) => metric.id).join("|");
 
   useEffect(() => {
+    if (!preferencesLoaded) {
+      return;
+    }
     setChartDraftMetricId((current) =>
       current && chartMetrics.some((metric) => metric.id === current) ? current : (chartMetrics[0]?.id ?? ""),
     );
     setCharts((current) => {
-      const valid = current.filter((chart) => chartMetrics.some((metric) => metric.id === chart.metricId));
       if (chartsTouched) {
-        return valid;
+        return current;
       }
-      return defaultCharts(chartMetrics).map((chart) => valid.find((item) => item.metricId === chart.metricId) ?? chart);
+      return defaultCharts(chartMetrics);
     });
-  }, [chartMetricsKey, chartMetrics, chartsTouched]);
+  }, [chartMetricsKey, chartMetrics, chartsTouched, preferencesLoaded]);
 
   const filteredRows = useMemo(
-    () => modelRows.filter((row) => !hiddenModelKeys.includes(row.modelKey)),
-    [hiddenModelKeys, modelRows],
+    () => modelRows.filter((row) => !effectiveHiddenModelKeys.includes(row.modelKey)),
+    [effectiveHiddenModelKeys, modelRows],
   );
 
   const columns = useMemo(
@@ -241,31 +274,45 @@ export function RunsPage() {
 
   const columnIds = useMemo(() => columns.map((column) => column.id).filter((id): id is string => Boolean(id)), [columns]);
   const columnIdsKey = columnIds.join("|");
+  const columnReferences = useMemo(
+    () => columns.map((column) => (column.id ? savedReference(column.id, columnLabel(column.header, column.id)) : null)).filter((reference): reference is SavedReference => Boolean(reference)),
+    [columns],
+  );
   const defaultColumnVisibility = useMemo<VisibilityState>(() => ({ hashes: false }), []);
 
   useEffect(() => {
+    if (!preferencesLoaded) {
+      return;
+    }
     setColumnOrder((current) => {
-      const existing = current.filter((id) => columnIds.includes(id));
-      const missing = columnIds.filter((id) => !existing.includes(id));
-      return [...existing, ...missing];
+      return mergeSavedReferences(referencesFromIds(current, columnLabels), columnReferences).map((reference) => reference.id);
     });
     setColumnVisibility((current) => {
-      const next: VisibilityState = {};
+      const next: VisibilityState = { ...current };
       for (const id of columnIds) {
-        if (Object.prototype.hasOwnProperty.call(current, id)) {
-          next[id] = current[id];
-        } else if (Object.prototype.hasOwnProperty.call(defaultColumnVisibility, id)) {
+        if (!Object.prototype.hasOwnProperty.call(next, id) && Object.prototype.hasOwnProperty.call(defaultColumnVisibility, id)) {
           next[id] = defaultColumnVisibility[id];
         }
       }
       return next;
     });
-  }, [columnIdsKey, columnIds, defaultColumnVisibility]);
+    setColumnLabels((current) => {
+      const next = { ...current, ...referenceLabels(columnReferences) };
+      return sameRecord(current, next) ? current : next;
+    });
+  }, [columnIdsKey, columnIds, columnReferences, columnLabels, defaultColumnVisibility, preferencesLoaded]);
+
+  const tableSorting = useMemo(() => effectiveSorting(sorting, columnIds), [sorting, columnIds]);
+  const tableColumnVisibility = useMemo(
+    () => effectiveColumnVisibility(columnVisibility, columnIds),
+    [columnVisibility, columnIds],
+  );
+  const tableColumnOrder = useMemo(() => effectiveColumnOrder(columnOrder, columnIds), [columnOrder, columnIds]);
 
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { sorting, columnVisibility, columnOrder },
+    state: { sorting: tableSorting, columnVisibility: tableColumnVisibility, columnOrder: tableColumnOrder },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnOrderChange: setColumnOrder,
@@ -273,7 +320,43 @@ export function RunsPage() {
     getSortedRowModel: getSortedRowModel(),
   });
 
+  const displayedRunCount = useMemo(() => new Set(filteredRows.map((row) => row.runKey)).size, [filteredRows]);
   const expandedChart = charts.find((chart) => chart.id === expandedChartId) ?? null;
+
+  useEffect(() => {
+    if (!preferencesLoaded || loading || error) {
+      return;
+    }
+    writeRunsPreferences({
+      version: defaultRunsPreferences.version,
+      hiddenModelKeys,
+      chartsCustomized: chartsTouched,
+      charts: charts.map((chart) => {
+        const metric = chartMetrics.find((item) => item.id === chart.metricId);
+        return {
+          id: chart.id,
+          metricId: chart.metricId,
+          label: metric?.label ?? chart.label,
+          group: metric?.group ?? chart.group,
+        };
+      }),
+      sorting,
+      columnVisibility,
+      columnOrder: referencesFromIds(columnOrder, columnLabels),
+    });
+  }, [
+    chartMetrics,
+    charts,
+    chartsTouched,
+    columnLabels,
+    columnOrder,
+    columnVisibility,
+    error,
+    hiddenModelKeys,
+    loading,
+    preferencesLoaded,
+    sorting,
+  ]);
 
   if (loading) {
     return <LoadingState />;
@@ -295,19 +378,18 @@ export function RunsPage() {
       <div className="mb-4 flex flex-wrap items-start gap-3">
         <ModelControls
           hiddenModelKeys={hiddenModelKeys}
+          missingHiddenModelKeys={missingHiddenModelKeys}
           modelOptions={modelOptions}
           setHiddenModelKeys={setHiddenModelKeys}
         />
         <ColumnControls
+          columnLabels={columnLabels}
           columnOrder={columnOrder}
           defaultColumnVisibility={defaultColumnVisibility}
           setColumnOrder={setColumnOrder}
           setColumnVisibility={setColumnVisibility}
           table={table}
         />
-        <div className="min-h-10 rounded-md border border-line bg-white px-3 py-2 text-sm text-slate-600 shadow-soft">
-          {formatInt(filteredRows.length)} rows
-        </div>
         <ChartControls
           chartDraftMetricId={chartDraftMetricId}
           charts={charts}
@@ -317,8 +399,12 @@ export function RunsPage() {
             if (!chartDraftMetricId || charts.some((chart) => chart.metricId === chartDraftMetricId)) {
               return;
             }
+            const metric = chartMetrics.find((item) => item.id === chartDraftMetricId);
             setChartsTouched(true);
-            setCharts((current) => [...current, { id: chartDraftMetricId, metricId: chartDraftMetricId }]);
+            setCharts((current) => [
+              ...current,
+              { id: chartDraftMetricId, metricId: chartDraftMetricId, label: metric?.label, group: metric?.group },
+            ]);
           }}
         />
       </div>
@@ -332,6 +418,11 @@ export function RunsPage() {
           setCharts((current) => current.filter((chart) => chart.id !== chartId));
         }}
       />
+      <div className="mb-2 flex justify-end">
+        <span className="text-xs font-medium text-slate-500">
+          {formatInt(displayedRunCount)} {displayedRunCount === 1 ? "run" : "runs"}
+        </span>
+      </div>
       <DataTable
         table={table}
         empty="No matching models."
@@ -366,7 +457,7 @@ function ChartControls({
 }) {
   const canAdd = Boolean(chartDraftMetricId) && !charts.some((chart) => chart.metricId === chartDraftMetricId);
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-white p-2 shadow-soft">
+    <div className="ml-auto flex flex-wrap items-center gap-2 rounded-md border border-line bg-white p-2 shadow-soft">
       <select
         value={chartDraftMetricId}
         onChange={(event) => setChartDraftMetricId(event.target.value)}
@@ -424,7 +515,9 @@ function RunCharts({
                   onOpen={onOpen}
                   onRemove={onRemove}
                 />
-              ) : null;
+              ) : (
+                <MissingChartCard key={chart.id} chart={chart} onRemove={onRemove} />
+              );
             })}
           </div>
         </div>
@@ -434,6 +527,30 @@ function RunCharts({
         </div>
       )}
     </section>
+  );
+}
+
+function MissingChartCard({ chart, onRemove }: { chart: ChartConfig; onRemove: (chartId: string) => void }) {
+  return (
+    <div className="w-[22rem] shrink-0 rounded-md border border-line bg-white p-2 shadow-soft">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-ink">{chart.label ?? "Metric unavailable"}</h3>
+          <p className="mt-1 text-xs text-slate-500">Metric unavailable</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onRemove(chart.id)}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-line text-lg leading-none text-ink hover:border-coral hover:text-coral"
+          aria-label={`Remove ${chart.label ?? "unavailable metric"}`}
+        >
+          &times;
+        </button>
+      </div>
+      <div className="mt-2 flex h-32 items-center justify-center rounded-md border border-line bg-mist text-sm text-slate-500">
+        Metric unavailable
+      </div>
+    </div>
   );
 }
 
@@ -677,10 +794,12 @@ function timestamp(value?: string | null): number {
 
 function ModelControls({
   hiddenModelKeys,
+  missingHiddenModelKeys,
   modelOptions,
   setHiddenModelKeys,
 }: {
   hiddenModelKeys: string[];
+  missingHiddenModelKeys: string[];
   modelOptions: string[];
   setHiddenModelKeys: Dispatch<SetStateAction<string[]>>;
 }) {
@@ -716,25 +835,37 @@ function ModelControls({
             </label>
           );
         })}
+        {missingHiddenModelKeys.map((modelKey) => (
+          <label
+            key={modelKey}
+            className="inline-flex min-h-9 cursor-not-allowed items-center gap-2 rounded-md border border-line bg-mist px-3 py-1.5 text-sm text-slate-500"
+          >
+            <input type="checkbox" checked={false} disabled className="h-4 w-4" />
+            <span className="break-all">{modelKey}</span>
+            <span className="text-xs">Unavailable</span>
+          </label>
+        ))}
       </div>
     </details>
   );
 }
 
 function ColumnControls({
+  columnLabels,
   columnOrder,
   defaultColumnVisibility,
   setColumnOrder,
   setColumnVisibility,
   table,
 }: {
+  columnLabels: Record<string, string>;
   columnOrder: ColumnOrderState;
   defaultColumnVisibility: VisibilityState;
   setColumnOrder: Dispatch<SetStateAction<ColumnOrderState>>;
   setColumnVisibility: Dispatch<SetStateAction<VisibilityState>>;
   table: Table<ModelRunRow>;
 }) {
-  const orderedColumns = orderedLeafColumns(table, columnOrder);
+  const orderedColumns = orderedColumnItems(table, columnOrder, columnLabels);
 
   return (
     <details className="rounded-md border border-line bg-white shadow-soft">
@@ -751,30 +882,38 @@ function ColumnControls({
           Reset
         </button>
         <div className="space-y-1">
-          {orderedColumns.map((column, index) => (
-            <div key={column.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-md px-2 py-1 hover:bg-mist">
-              <label className="flex min-h-9 items-center gap-2 overflow-hidden text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={column.getIsVisible()}
-                  disabled={!column.getCanHide()}
-                  onChange={(event) => column.toggleVisibility(event.target.checked)}
-                  className="h-4 w-4 shrink-0 accent-leaf disabled:opacity-30"
-                />
-                <span className="truncate">{columnLabel(column.columnDef.header, column.id)}</span>
-              </label>
+          {orderedColumns.map((item, index) => (
+            <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-md px-2 py-1 hover:bg-mist">
+              {item.column ? (
+                <label className="flex min-h-9 items-center gap-2 overflow-hidden text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={item.column.getIsVisible()}
+                    disabled={!item.column.getCanHide()}
+                    onChange={(event) => item.column?.toggleVisibility(event.target.checked)}
+                    className="h-4 w-4 shrink-0 accent-leaf disabled:opacity-30"
+                  />
+                  <span className="truncate">{item.label}</span>
+                </label>
+              ) : (
+                <label className="flex min-h-9 cursor-not-allowed items-center gap-2 overflow-hidden text-sm text-slate-500">
+                  <input type="checkbox" checked={false} disabled className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                  <span className="shrink-0 text-xs">Unavailable</span>
+                </label>
+              )}
               <button
                 type="button"
-                disabled={index === 0}
-                onClick={() => moveColumn(column.id, -1, table, setColumnOrder)}
+                disabled={!item.column || index === 0}
+                onClick={() => moveColumn(item.id, -1, table, setColumnOrder)}
                 className="min-h-8 rounded-md border border-line px-2 text-xs font-medium text-ink disabled:opacity-30"
               >
                 Up
               </button>
               <button
                 type="button"
-                disabled={index === orderedColumns.length - 1}
-                onClick={() => moveColumn(column.id, 1, table, setColumnOrder)}
+                disabled={!item.column || index === orderedColumns.length - 1}
+                onClick={() => moveColumn(item.id, 1, table, setColumnOrder)}
                 className="min-h-8 rounded-md border border-line px-2 text-xs font-medium text-ink disabled:opacity-30"
               >
                 Down
@@ -787,11 +926,35 @@ function ColumnControls({
   );
 }
 
-function orderedLeafColumns(table: Table<ModelRunRow>, columnOrder: ColumnOrderState) {
+type ColumnControlItem = {
+  id: string;
+  label: string;
+  column: Column<ModelRunRow, unknown> | null;
+};
+
+function orderedColumnItems(
+  table: Table<ModelRunRow>,
+  columnOrder: ColumnOrderState,
+  columnLabels: Record<string, string>,
+): ColumnControlItem[] {
   const allColumns = table.getAllLeafColumns();
   const byId = new Map(allColumns.map((column) => [column.id, column]));
-  const ordered = columnOrder.map((id) => byId.get(id)).filter((column): column is (typeof allColumns)[number] => Boolean(column));
-  const missing = allColumns.filter((column) => !columnOrder.includes(column.id));
+  const ids = columnOrder.length ? columnOrder : allColumns.map((column) => column.id);
+  const ordered = ids.map((id) => {
+    const column = byId.get(id);
+    return {
+      id,
+      label: column ? columnLabel(column.columnDef.header, id) : (columnLabels[id] ?? "Column unavailable"),
+      column: column ?? null,
+    };
+  });
+  const missing = allColumns
+    .filter((column) => !ids.includes(column.id))
+    .map((column) => ({
+      id: column.id,
+      label: columnLabel(column.columnDef.header, column.id),
+      column,
+    }));
   return [...ordered, ...missing];
 }
 
@@ -834,6 +997,12 @@ function moveColumn(
 
 function columnLabel(header: unknown, fallback: string): string {
   return typeof header === "string" ? header : fallback;
+}
+
+function sameRecord(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => left[key] === right[key]);
 }
 
 function scoreColumnId(scoreId: string): string {
@@ -939,7 +1108,10 @@ function defaultCharts(metrics: ChartMetric[]): ChartConfig[] {
   const preferredIds = [metrics.find((metric) => metric.id.startsWith("score:"))?.id, "latency:avg", "tokens:total"].filter(
     (id): id is string => Boolean(id) && metrics.some((metric) => metric.id === id),
   );
-  return [...new Set(preferredIds)].map((metricId) => ({ id: metricId, metricId }));
+  return [...new Set(preferredIds)].map((metricId) => {
+    const metric = metrics.find((item) => item.id === metricId);
+    return { id: metricId, metricId, label: metric?.label, group: metric?.group };
+  });
 }
 
 function metricGroups(metrics: ChartMetric[]) {

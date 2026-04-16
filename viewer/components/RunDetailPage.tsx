@@ -17,6 +17,17 @@ import {
   recordScore,
   scoreNumber,
 } from "../lib/evals";
+import {
+  availableReferenceIds,
+  defaultRunDetailPreferences,
+  effectiveId,
+  effectiveSorting,
+  missingReference,
+  readRunDetailPreferences,
+  savedReference,
+  writeRunDetailPreferences,
+  type SavedReference,
+} from "../lib/preferences";
 import type { EvalResult, ItemRunRecord, ModelRunSummary, RunDetail, ScoreMetric, StepRecord } from "../lib/types";
 import { formatDate, formatInt, formatScore, formatSeconds } from "./format";
 import {
@@ -45,16 +56,31 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [modelFilter, setModelFilter] = useState("");
-  const [scoreFilter, setScoreFilter] = useState("");
-  const [visibleScoreIds, setVisibleScoreIds] = useState<string[]>([]);
-  const [stepFilter, setStepFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState<SavedReference | null>(null);
+  const [scoreFilter, setScoreFilter] = useState<SavedReference | null>(null);
+  const [visibleScoreIds, setVisibleScoreIds] = useState<SavedReference[]>([]);
+  const [stepFilter, setStepFilter] = useState<SavedReference | null>(null);
   const [threshold, setThreshold] = useState("");
   const [failedOnly, setFailedOnly] = useState(false);
   const [evalErrorsOnly, setEvalErrorsOnly] = useState(false);
   const [selected, setSelected] = useState<ItemRunRecord | null>(null);
   const [tab, setTab] = useState<DetailTab>("output");
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "item_index", desc: false }]);
+
+  useEffect(() => {
+    const preferences = readRunDetailPreferences(runKey);
+    setQuery(preferences.query);
+    setModelFilter(preferences.modelFilter);
+    setScoreFilter(preferences.scoreFilter);
+    setVisibleScoreIds(preferences.visibleScoreIds);
+    setStepFilter(preferences.stepFilter);
+    setThreshold(preferences.threshold);
+    setFailedOnly(preferences.failedOnly);
+    setEvalErrorsOnly(preferences.evalErrorsOnly);
+    setSorting(preferences.sorting.length ? preferences.sorting : defaultRunDetailPreferences.sorting);
+    setPreferencesLoaded(true);
+  }, [runKey]);
 
   useEffect(() => {
     fetch(`/api/runs/${encodeURIComponent(runKey)}`)
@@ -68,6 +94,29 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
       .catch((caught: Error) => setError(caught.message))
       .finally(() => setLoading(false));
   }, [runKey]);
+
+  const modelReferences = useMemo(
+    () => (detail?.summary.modelKeys ?? []).map((model) => savedReference(model, model)),
+    [detail?.summary.modelKeys],
+  );
+  const metricReferences = useMemo(
+    () => (detail?.metrics ?? []).map((metric) => savedReference(metric.id, metric.label)),
+    [detail?.metrics],
+  );
+  const stepReferences = useMemo(
+    () => (detail?.stepKeys ?? []).map((step) => savedReference(step, step)),
+    [detail?.stepKeys],
+  );
+  const modelIds = useMemo(() => modelReferences.map((reference) => reference.id), [modelReferences]);
+  const metricIds = useMemo(() => metricReferences.map((reference) => reference.id), [metricReferences]);
+  const stepIds = useMemo(() => stepReferences.map((reference) => reference.id), [stepReferences]);
+  const effectiveModelFilter = useMemo(() => effectiveId(modelFilter, modelIds), [modelFilter, modelIds]);
+  const effectiveScoreFilter = useMemo(() => effectiveId(scoreFilter, metricIds), [scoreFilter, metricIds]);
+  const effectiveStepFilter = useMemo(() => effectiveId(stepFilter, stepIds), [stepFilter, stepIds]);
+  const effectiveVisibleScoreIds = useMemo(
+    () => (visibleScoreIds.length ? availableReferenceIds(visibleScoreIds, metricIds) : []),
+    [metricIds, visibleScoreIds],
+  );
 
   const filteredRecords = useMemo<DetailRow[]>(() => {
     if (!detail) {
@@ -83,16 +132,16 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
       if (evalErrorsOnly && !recordHasEvaluatorError(record)) {
         return false;
       }
-      if (modelFilter && record.model_key !== modelFilter) {
+      if (effectiveModelFilter && record.model_key !== effectiveModelFilter) {
         return false;
       }
-      if (scoreFilter) {
-        const metric = detail.metrics.find((item) => item.id === scoreFilter);
+      if (effectiveScoreFilter) {
+        const metric = detail.metrics.find((item) => item.id === effectiveScoreFilter);
         if (!metric || recordScore(record, metric) === null) {
           return false;
         }
       }
-      if (stepFilter && !(record.steps ?? []).some((step) => step.key === stepFilter)) {
+      if (effectiveStepFilter && !(record.steps ?? []).some((step) => step.key === effectiveStepFilter)) {
         return false;
       }
       if (maxScore !== null && Number.isFinite(maxScore)) {
@@ -127,7 +176,7 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
         itemGroupKey,
       };
     });
-  }, [detail, evalErrorsOnly, failedOnly, modelFilter, query, scoreFilter, stepFilter, threshold]);
+  }, [detail, effectiveModelFilter, effectiveScoreFilter, effectiveStepFilter, evalErrorsOnly, failedOnly, query, threshold]);
 
   const columns = useMemo(
     () => [
@@ -214,10 +263,13 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
     [detail?.metrics],
   );
 
+  const columnIds = useMemo(() => columns.map((column) => column.id).filter((id): id is string => Boolean(id)), [columns]);
+  const tableSorting = useMemo(() => effectiveSorting(sorting, columnIds), [sorting, columnIds]);
+
   const table = useReactTable({
     data: filteredRecords,
     columns,
-    state: { sorting },
+    state: { sorting: tableSorting },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -227,11 +279,48 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
     if (!detail) {
       return [];
     }
-    const metrics = visibleScoreIds.length
-      ? detail.metrics.filter((metric) => visibleScoreIds.includes(metric.id))
-      : detail.metrics;
+    const metrics =
+      visibleScoreIds.length && effectiveVisibleScoreIds.length
+        ? detail.metrics.filter((metric) => effectiveVisibleScoreIds.includes(metric.id))
+        : detail.metrics;
     return buildScoreMatrix(detail.records, metrics);
-  }, [detail, visibleScoreIds]);
+  }, [detail, effectiveVisibleScoreIds, visibleScoreIds.length]);
+
+  useEffect(() => {
+    if (!preferencesLoaded || loading || error || !detail) {
+      return;
+    }
+    writeRunDetailPreferences(runKey, {
+      version: defaultRunDetailPreferences.version,
+      query,
+      modelFilter: refreshReference(modelFilter, modelReferences),
+      scoreFilter: refreshReference(scoreFilter, metricReferences),
+      visibleScoreIds: visibleScoreIds.map((reference) => refreshReference(reference, metricReferences) ?? reference),
+      stepFilter: refreshReference(stepFilter, stepReferences),
+      threshold,
+      failedOnly,
+      evalErrorsOnly,
+      sorting,
+    });
+  }, [
+    detail,
+    error,
+    evalErrorsOnly,
+    failedOnly,
+    loading,
+    metricReferences,
+    modelFilter,
+    modelReferences,
+    preferencesLoaded,
+    query,
+    runKey,
+    scoreFilter,
+    sorting,
+    stepFilter,
+    stepReferences,
+    threshold,
+    visibleScoreIds,
+  ]);
 
   if (loading) {
     return <LoadingState />;
@@ -280,7 +369,7 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
           </div>
         </div>
         <ScoreControls
-          metrics={detail.metrics}
+          metrics={metricReferences}
           visibleScoreIds={visibleScoreIds}
           setVisibleScoreIds={setVisibleScoreIds}
         />
@@ -290,24 +379,39 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
 
       <Toolbar>
         <SearchInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search items" />
-        <SelectInput value={modelFilter} onChange={(event) => setModelFilter(event.target.value)} aria-label="Model">
+        <SelectInput value={modelFilter?.id ?? ""} onChange={(event) => setModelFilter(referenceForId(event.target.value, modelReferences))} aria-label="Model">
           <option value="">All models</option>
+          {missingReference(modelFilter, modelIds) ? (
+            <option value={modelFilter?.id ?? ""} disabled>
+              {modelFilter?.label ?? "Model unavailable"} (Unavailable)
+            </option>
+          ) : null}
           {detail.summary.modelKeys.map((model) => (
             <option key={model} value={model}>
               {model}
             </option>
           ))}
         </SelectInput>
-        <SelectInput value={scoreFilter} onChange={(event) => setScoreFilter(event.target.value)} aria-label="Score">
+        <SelectInput value={scoreFilter?.id ?? ""} onChange={(event) => setScoreFilter(referenceForId(event.target.value, metricReferences))} aria-label="Score">
           <option value="">All scores</option>
+          {missingReference(scoreFilter, metricIds) ? (
+            <option value={scoreFilter?.id ?? ""} disabled>
+              {scoreFilter?.label ?? "Score unavailable"} (Unavailable)
+            </option>
+          ) : null}
           {detail.metrics.map((metric) => (
             <option key={metric.id} value={metric.id}>
               {metric.label}
             </option>
           ))}
         </SelectInput>
-        <SelectInput value={stepFilter} onChange={(event) => setStepFilter(event.target.value)} aria-label="Step">
+        <SelectInput value={stepFilter?.id ?? ""} onChange={(event) => setStepFilter(referenceForId(event.target.value, stepReferences))} aria-label="Step">
           <option value="">All steps</option>
+          {missingReference(stepFilter, stepIds) ? (
+            <option value={stepFilter?.id ?? ""} disabled>
+              {stepFilter?.label ?? "Step unavailable"} (Unavailable)
+            </option>
+          ) : null}
           {detail.stepKeys.map((step) => (
             <option key={step} value={step}>
               {step}
@@ -402,14 +506,16 @@ function ScoreControls({
   visibleScoreIds,
   setVisibleScoreIds,
 }: {
-  metrics: ScoreMetric[];
-  visibleScoreIds: string[];
-  setVisibleScoreIds: Dispatch<SetStateAction<string[]>>;
+  metrics: SavedReference[];
+  visibleScoreIds: SavedReference[];
+  setVisibleScoreIds: Dispatch<SetStateAction<SavedReference[]>>;
 }) {
-  if (metrics.length <= 1) {
+  const missingVisibleScores = visibleScoreIds.filter((reference) => !metrics.some((metric) => metric.id === reference.id));
+  const selectedAvailableIds = visibleScoreIds.map((reference) => reference.id).filter((id) => metrics.some((metric) => metric.id === id));
+  const visibleIds = !visibleScoreIds.length || !selectedAvailableIds.length ? metrics.map((metric) => metric.id) : selectedAvailableIds;
+  if (metrics.length <= 1 && !missingVisibleScores.length) {
     return null;
   }
-  const visibleIds = visibleScoreIds.length ? visibleScoreIds : metrics.map((metric) => metric.id);
   return (
     <details className="mb-3 rounded-md border border-line bg-white shadow-soft">
       <summary className="min-h-10 cursor-pointer px-3 py-2 text-sm font-semibold text-ink">Scores</summary>
@@ -428,23 +534,35 @@ function ScoreControls({
               key={metric.id}
               className="inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 py-1.5 text-sm text-ink"
             >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={(event) => {
-                  setVisibleScoreIds((current) => {
-                    const currentIds = current.length ? current : metrics.map((item) => item.id);
-                    return event.target.checked
-                      ? [...currentIds, metric.id]
-                      : currentIds.filter((id) => id !== metric.id);
-                  });
-                }}
-                className="h-4 w-4 accent-leaf"
-              />
-              {metric.label}
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(event) => {
+                    setVisibleScoreIds((current) => {
+                      const stale = current.filter((item) => !metrics.some((metricItem) => metricItem.id === item.id));
+                      const nextIds = event.target.checked
+                        ? [...visibleIds, metric.id]
+                        : visibleIds.filter((id) => id !== metric.id);
+                      const next = nextIds.map((id) => referenceForId(id, metrics)).filter((item): item is SavedReference => Boolean(item));
+                      return [...stale, ...next];
+                    });
+                  }}
+                  className="h-4 w-4 accent-leaf"
+                />
+              {metric.label ?? metric.id}
             </label>
           );
         })}
+        {missingVisibleScores.map((metric) => (
+          <label
+            key={metric.id}
+            className="inline-flex min-h-9 cursor-not-allowed items-center gap-2 rounded-md border border-line bg-mist px-3 py-1.5 text-sm text-slate-500"
+          >
+            <input type="checkbox" checked disabled className="h-4 w-4" />
+            {metric.label ?? "Score unavailable"}
+            <span className="text-xs">Unavailable</span>
+          </label>
+        ))}
       </div>
     </details>
   );
@@ -488,6 +606,20 @@ function bestScoreForRow(byModel: Record<string, { mean: number | null; count: n
     .map((item) => item.mean)
     .filter((value) => value !== null);
   return values.length ? Math.max(...values) : null;
+}
+
+function referenceForId(id: string, references: SavedReference[]): SavedReference | null {
+  if (!id) {
+    return null;
+  }
+  return references.find((reference) => reference.id === id) ?? savedReference(id);
+}
+
+function refreshReference(reference: SavedReference | null, available: SavedReference[]): SavedReference | null {
+  if (!reference) {
+    return null;
+  }
+  return available.find((item) => item.id === reference.id) ?? reference;
 }
 
 function MetricMatrix({
