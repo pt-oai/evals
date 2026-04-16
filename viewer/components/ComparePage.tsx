@@ -350,7 +350,7 @@ export function ComparePage() {
 
   return (
     <>
-      <PageTitle eyebrow="Compare" title="Compare run lanes">
+      <PageTitle eyebrow="Compare" title="Compare runs">
         <Link href="/" className="rounded-md border border-line bg-white px-3 py-2 text-sm font-semibold text-ink hover:border-ink">
           All runs
         </Link>

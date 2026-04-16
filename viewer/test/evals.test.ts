@@ -81,10 +81,10 @@ describe("artifact summaries", () => {
 
 describe("server artifact loading", () => {
   it("discovers immediate run folders and ignores other folders", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "pt-evals-viewer-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "prism-evals-viewer-"));
     await writeRun(root, "run-a", manifest("run-a", ["m1"]), [record("item-1", "m1", { exact: true })]);
     await mkdir(path.join(root, "notes"));
-    vi.stubEnv("PT_EVALS_RUNS_DIR", root);
+    vi.stubEnv("PRISM_RUNS_DIR", root);
 
     const summaries = await loadRunSummaries();
 
@@ -94,10 +94,10 @@ describe("server artifact loading", () => {
   });
 
   it("loads comparisons across runs", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "pt-evals-viewer-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "prism-evals-viewer-"));
     await writeRun(root, "run-a", manifest("run-a", ["m1"]), [record("item-1", "m1", { exact: true })]);
     await writeRun(root, "run-b", manifest("run-b", ["m2"]), [record("item-1", "m2", { exact: false })]);
-    vi.stubEnv("PT_EVALS_RUNS_DIR", root);
+    vi.stubEnv("PRISM_RUNS_DIR", root);
 
     const comparison = await loadCompare({
       baselineRun: "run-a",

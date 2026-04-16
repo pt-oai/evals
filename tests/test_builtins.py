@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from evals import (
+from prism_evals import (
     ApproxEqual,
     Contains,
     Equal,

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pt-evals"
-version = "0.5.9"
-description = "Local Python experiment framework for OpenAI Responses API evals."
+name = "prism-evals"
+version = "0.6.0"
+description = "Local experiment framework for OpenAI Responses API evals."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,7 +17,9 @@ dependencies = [
 ]
 
 [project.scripts]
-pt-evals = "evals.cli:main"
+prism = "prism_evals.cli:main"
+prism-evals = "prism_evals.cli:main"
+pe = "prism_evals.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -25,19 +27,19 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/evals"]
+packages = ["src/prism_evals"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"viewer/app" = "evals/viewer/app"
-"viewer/components" = "evals/viewer/components"
-"viewer/lib" = "evals/viewer/lib"
-"viewer/next-env.d.ts" = "evals/viewer/next-env.d.ts"
-"viewer/next.config.ts" = "evals/viewer/next.config.ts"
-"viewer/package-lock.json" = "evals/viewer/package-lock.json"
-"viewer/package.json" = "evals/viewer/package.json"
-"viewer/postcss.config.mjs" = "evals/viewer/postcss.config.mjs"
-"viewer/tailwind.config.ts" = "evals/viewer/tailwind.config.ts"
-"viewer/tsconfig.json" = "evals/viewer/tsconfig.json"
+"viewer/app" = "prism_evals/viewer/app"
+"viewer/components" = "prism_evals/viewer/components"
+"viewer/lib" = "prism_evals/viewer/lib"
+"viewer/next-env.d.ts" = "prism_evals/viewer/next-env.d.ts"
+"viewer/next.config.ts" = "prism_evals/viewer/next.config.ts"
+"viewer/package-lock.json" = "prism_evals/viewer/package-lock.json"
+"viewer/package.json" = "prism_evals/viewer/package.json"
+"viewer/postcss.config.mjs" = "prism_evals/viewer/postcss.config.mjs"
+"viewer/tailwind.config.ts" = "prism_evals/viewer/tailwind.config.ts"
+"viewer/tsconfig.json" = "prism_evals/viewer/tsconfig.json"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

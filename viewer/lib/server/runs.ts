@@ -7,7 +7,7 @@ import type { ArtifactFile, CompareResult, ItemRunRecord, Lane, RunDetail, RunMa
 const artifactNames = ["manifest.json", "results.jsonl", "results.csv", "scores.csv", "steps.csv"];
 
 export function runsRoot(): string {
-  const root = process.env.PT_EVALS_RUNS_DIR;
+  const root = process.env.PRISM_RUNS_DIR;
   if (!root) {
     throw new Error("No runs directory selected.");
   }

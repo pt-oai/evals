@@ -2,8 +2,8 @@ import packageJson from "../../package.json";
 import type { ViewerInfo } from "../types";
 
 export function loadViewerInfo(): ViewerInfo {
-  const tag = process.env.PT_EVALS_VIEWER_TAG ?? versionTag(process.env.PT_EVALS_VIEWER_VERSION ?? packageJson.version);
-  const latestTag = process.env.PT_EVALS_VIEWER_LATEST_TAG ?? null;
+  const tag = process.env.PRISM_VIEWER_TAG ?? versionTag(process.env.PRISM_VIEWER_VERSION ?? packageJson.version);
+  const latestTag = process.env.PRISM_VIEWER_LATEST_TAG ?? null;
   const updateAvailable = latestTag ? compareVersionTags(latestTag, tag) > 0 : false;
   return {
     tag,

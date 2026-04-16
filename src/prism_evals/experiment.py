@@ -9,8 +9,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from evals.models import EvalDefinition, ItemRunRecord, ModelConfig
-from evals.runner import Runner
+from prism_evals.models import EvalDefinition, ItemRunRecord, ModelConfig
+from prism_evals.runner import Runner
 
 WorkflowFn = Callable[..., Any]
 EvalFn = Callable[..., Any]

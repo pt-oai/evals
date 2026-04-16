@@ -3,8 +3,8 @@ from __future__ import annotations
 import inspect
 from typing import Any
 
-from evals.errors import exception_to_error
-from evals.models import EvalDefinition, EvalResult, ModelConfig, TaskOutput, infer_score_type
+from prism_evals.errors import exception_to_error
+from prism_evals.models import EvalDefinition, EvalResult, ModelConfig, TaskOutput, infer_score_type
 
 
 async def run_eval_definitions(

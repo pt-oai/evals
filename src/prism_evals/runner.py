@@ -10,11 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from evals._utils import file_sha256, git_commit, stable_hash, utc_now_iso
-from evals.console import ConsoleReporter
-from evals.errors import exception_to_error
-from evals.evaluation import has_eval_errors, run_eval_definitions
-from evals.models import (
+from prism_evals._utils import file_sha256, git_commit, stable_hash, utc_now_iso
+from prism_evals.console import ConsoleReporter
+from prism_evals.errors import exception_to_error
+from prism_evals.evaluation import has_eval_errors, run_eval_definitions
+from prism_evals.models import (
     EvalResult,
     ItemRunRecord,
     ModelConfig,
@@ -22,11 +22,11 @@ from evals.models import (
     TaskOutput,
     TokenUsage,
 )
-from evals.openai import ExperimentContext, make_default_client
-from evals.storage import Storage
+from prism_evals.openai import ExperimentContext, make_default_client
+from prism_evals.storage import Storage
 
 if TYPE_CHECKING:
-    from evals.experiment import Experiment
+    from prism_evals.experiment import Experiment
 
 
 @dataclass(frozen=True)

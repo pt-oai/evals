@@ -7,10 +7,10 @@ from typing import Any
 from openai import AsyncOpenAI
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
-from evals._utils import to_jsonable, utc_now_iso
-from evals.errors import exception_to_error
-from evals.evaluation import eval_definitions_from_specs, has_eval_errors, run_eval_definitions
-from evals.models import GenerationRecord, ModelConfig, StepRecord, TaskOutput, TokenUsage
+from prism_evals._utils import to_jsonable, utc_now_iso
+from prism_evals.errors import exception_to_error
+from prism_evals.evaluation import eval_definitions_from_specs, has_eval_errors, run_eval_definitions
+from prism_evals.models import GenerationRecord, ModelConfig, StepRecord, TaskOutput, TokenUsage
 
 
 class ResponsesProxy:

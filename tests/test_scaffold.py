@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from evals.cli import main
-from evals.scaffold import BEGIN_MARKER, END_MARKER, install_agents_md, load_agents_template
+from prism_evals.cli import main
+from prism_evals.scaffold import BEGIN_MARKER, END_MARKER, install_agents_md, load_agents_template
 
 
 def test_load_agents_template_contains_result_guidance():
@@ -11,7 +11,8 @@ def test_load_agents_template_contains_result_guidance():
 
     assert BEGIN_MARKER in template
     assert END_MARKER in template
-    assert "This repo uses `pt-evals`" in template
+    assert "This repo uses `prism-evals`" in template
+    assert "# Prism Evals" in template
     assert "results.jsonl" in template
     assert "Where To Make Changes" in template
 
@@ -21,7 +22,7 @@ def test_install_agents_md_creates_file(tmp_path):
 
     assert action == "created"
     assert path == tmp_path / "AGENTS.md"
-    assert "This repo uses `pt-evals`" in path.read_text(encoding="utf-8")
+    assert "This repo uses `prism-evals`" in path.read_text(encoding="utf-8")
 
 
 def test_install_agents_md_appends_to_existing_file(tmp_path):
@@ -74,7 +75,7 @@ def test_cli_init_creates_agents_file(tmp_path, capsys):
 
     assert result == 0
     assert (tmp_path / "AGENTS.md").exists()
-    assert "Created pt-evals instructions" in capsys.readouterr().out
+    assert "Created Prism Evals instructions" in capsys.readouterr().out
 
 
 def test_cli_init_reports_failures(tmp_path, capsys):
@@ -84,4 +85,4 @@ def test_cli_init_reports_failures(tmp_path, capsys):
     result = main(["init", "--repo-root", str(tmp_path), "--no-append"])
 
     assert result == 1
-    assert "pt-evals init failed" in capsys.readouterr().err
+    assert "prism init failed" in capsys.readouterr().err

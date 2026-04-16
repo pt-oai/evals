@@ -5,8 +5,8 @@ import { loadViewerInfo } from "../lib/server/viewer";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Eval Runs",
-  description: "Review local eval runs.",
+  title: "Prism Evals",
+  description: "Review local Prism Evals runs.",
 };
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <div className="flex w-full flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between">
             <div>
               <Link href="/" className="text-2xl font-semibold text-ink">
-                Eval Runs
+                <span className="inline-flex items-center gap-2">
+                  <span aria-hidden="true" className="grid h-7 w-7 grid-cols-3 overflow-hidden rounded-md border border-line bg-white p-1 shadow-soft">
+                    <span className="rounded-sm bg-leaf" />
+                    <span className="rounded-sm bg-ink" />
+                    <span className="rounded-sm bg-coral" />
+                  </span>
+                  Prism Evals
+                </span>
               </Link>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <span className="font-medium">{viewerInfo.tag}</span>

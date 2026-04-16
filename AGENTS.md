@@ -1,22 +1,25 @@
 # AGENTS.md
 
-This repo provides `pt-evals`, a local Python framework for executable OpenAI
-Responses API experiments. The Python import is `evals`.
+This repo provides Prism Evals, a local Python framework for executable OpenAI
+Responses API experiments. The package distribution is `prism-evals`, and the
+Python import is `prism_evals`.
 
 Use this file as the quick orientation for LLM agents working in this package
-repo, and as a template for consuming repos that install `pt-evals`.
+repo, and as a template for consuming repos that install Prism Evals.
 
-To seed `pt-evals` instructions into a consuming repo, install the package and
+To seed Prism Evals instructions into a consuming repo, install the package and
 run this from the consuming repo root:
 
 ```bash
-python -m evals init
+python -m prism_evals init
 ```
 
-The installed console script also works:
+The installed console scripts also work:
 
 ```bash
-pt-evals init
+prism init
+prism-evals init
+pe init
 ```
 
 ## What An Eval Experiment Is
@@ -38,7 +41,7 @@ python path/to/experiment.py
 The minimal shape is:
 
 ```python
-from evals import Experiment, ModelConfig
+from prism_evals import Experiment, ModelConfig
 
 exp = Experiment(name="my_eval", dataset="datasets/my_eval.csv", output_dir="runs")
 exp.model(ModelConfig(key="gpt5_low", model="gpt-5", params={"reasoning": {"effort": "low"}}))

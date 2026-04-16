@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from evals._utils import file_sha256
+from prism_evals._utils import file_sha256
 
 
 @dataclass(frozen=True)

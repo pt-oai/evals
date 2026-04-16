@@ -4,12 +4,12 @@ from importlib.resources import files
 from pathlib import Path
 
 
-BEGIN_MARKER = "<!-- pt-evals instructions begin -->"
-END_MARKER = "<!-- pt-evals instructions end -->"
+BEGIN_MARKER = "<!-- prism-evals instructions begin -->"
+END_MARKER = "<!-- prism-evals instructions end -->"
 
 
 def load_agents_template() -> str:
-    template = files("evals").joinpath("templates", "AGENTS.md")
+    template = files("prism_evals").joinpath("templates", "AGENTS.md")
     return template.read_text(encoding="utf-8")
 
 

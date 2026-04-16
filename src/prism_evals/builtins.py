@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from evals.models import EvalResult
+from prism_evals.models import EvalResult
 
 _UNSET = object()
 

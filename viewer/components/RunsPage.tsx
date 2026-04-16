@@ -365,12 +365,12 @@ export function RunsPage() {
     return <ErrorState message={error} />;
   }
   if (!runs.length) {
-    return <EmptyState title="No runs found" body="Choose a folder with completed eval runs, then refresh this page." />;
+    return <EmptyState title="No runs found" body="Choose a folder with completed runs, then refresh this page." />;
   }
 
   return (
     <>
-      <PageTitle eyebrow="All runs" title="Review eval runs">
+      <PageTitle eyebrow="All runs" title="Review runs">
         <Link href="/compare" className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-leaf">
           Compare runs
         </Link>

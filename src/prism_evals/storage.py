@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from evals._utils import to_jsonable
-from evals.artifacts import copy_artifacts as copy_user_artifacts
-from evals.models import ItemRunRecord, RunManifest, StepRecord
+from prism_evals._utils import to_jsonable
+from prism_evals.artifacts import copy_artifacts as copy_user_artifacts
+from prism_evals.models import ItemRunRecord, RunManifest, StepRecord
 
 
 class Storage:

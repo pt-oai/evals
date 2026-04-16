@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 import pytest
 
-from evals.cli import (
+from prism_evals.cli import (
     ensure_viewer_dependencies,
     newest_version_tag,
     main,
@@ -45,12 +48,22 @@ def test_cli_view_reports_validation_failures(tmp_path, capsys):
     result = main(["view", str(tmp_path)])
 
     assert result == 1
-    assert "pt-evals view failed" in capsys.readouterr().err
+    assert "prism view failed" in capsys.readouterr().err
+
+
+def test_project_scripts_expose_prism_aliases():
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["scripts"] == {
+        "prism": "prism_evals.cli:main",
+        "prism-evals": "prism_evals.cli:main",
+        "pe": "prism_evals.cli:main",
+    }
 
 
 def test_viewer_dir_uses_env_override(tmp_path, monkeypatch):
     override = tmp_path / "viewer"
-    monkeypatch.setenv("PT_EVALS_VIEWER_DIR", str(override))
+    monkeypatch.setenv("PRISM_VIEWER_DIR", str(override))
 
     assert viewer_dir() == override.resolve()
 
@@ -66,7 +79,7 @@ def test_ensure_viewer_dependencies_skips_existing_install(tmp_path, monkeypatch
     def fail_run(*args, **kwargs):
         raise AssertionError("npm install should not run")
 
-    monkeypatch.setattr("evals.cli.subprocess.run", fail_run)
+    monkeypatch.setattr("prism_evals.cli.subprocess.run", fail_run)
 
     ensure_viewer_dependencies(app_dir)
 
@@ -89,12 +102,12 @@ def test_ensure_viewer_dependencies_runs_npm_install(tmp_path, monkeypatch):
     app_dir.mkdir()
     calls = []
 
-    monkeypatch.setattr("evals.cli.shutil.which", lambda name: "/usr/bin/npm" if name == "npm" else None)
+    monkeypatch.setattr("prism_evals.cli.shutil.which", lambda name: "/usr/bin/npm" if name == "npm" else None)
 
     def fake_run(args, *, cwd, check):
         calls.append((args, cwd, check))
 
-    monkeypatch.setattr("evals.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("prism_evals.cli.subprocess.run", fake_run)
 
     ensure_viewer_dependencies(app_dir)
 

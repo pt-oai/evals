@@ -1,4 +1,4 @@
-from evals.builtins import (
+from prism_evals.builtins import (
     ApproxEqual,
     Contains,
     Equal,
@@ -14,8 +14,8 @@ from evals.builtins import (
     step_text,
     text,
 )
-from evals.experiment import Experiment
-from evals.models import (
+from prism_evals.experiment import Experiment
+from prism_evals.models import (
     ErrorRecord,
     EvalResult,
     GenerationRecord,

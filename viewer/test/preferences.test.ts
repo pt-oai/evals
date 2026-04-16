@@ -52,11 +52,11 @@ describe("viewer preferences", () => {
 
   it("falls back to defaults for corrupt or unknown stored values", () => {
     const storage = new MemoryStorage();
-    storage.setItem("pt-evals.viewer.runs", "{broken");
+    storage.setItem("prism-evals.viewer.runs", "{broken");
 
     expect(readRunsPreferences(storage)).toEqual(defaultRunsPreferences);
 
-    storage.setItem("pt-evals.viewer.runs", JSON.stringify({ version: 999, hiddenModelKeys: ["old"] }));
+    storage.setItem("prism-evals.viewer.runs", JSON.stringify({ version: 999, hiddenModelKeys: ["old"] }));
 
     expect(readRunsPreferences(storage)).toEqual(defaultRunsPreferences);
   });

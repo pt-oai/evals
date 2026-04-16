@@ -1,9 +1,17 @@
-<!-- pt-evals instructions begin -->
-# pt-evals
+<!-- prism-evals instructions begin -->
+# Prism Evals
 
-This repo uses `pt-evals` for local executable OpenAI Responses API
-experiments. The package distribution is named `pt-evals`; the Python import is
-`evals`.
+This repo uses `prism-evals` for local executable OpenAI Responses API
+experiments. The package distribution is named `prism-evals`; the Python import is
+`prism_evals`.
+
+Common commands:
+
+```bash
+prism init
+prism view runs/
+pe view runs/
+```
 
 ## What An Eval Experiment Is
 
@@ -19,6 +27,12 @@ Run an experiment by executing the Python file directly:
 
 ```bash
 python path/to/experiment.py
+```
+
+Experiment files import the public API from `prism_evals`:
+
+```python
+from prism_evals import Experiment, ModelConfig
 ```
 
 ## Where To Make Changes
@@ -168,4 +182,4 @@ the flattened CSV files.
 Return `TaskOutput(text=..., value=...)` when the final output has both display
 text and structured data. Built-in selectors such as `text()`, `out("path")`,
 `step("step_key.path")`, and `step_text("step_key")` depend on that structure.
-<!-- pt-evals instructions end -->
+<!-- prism-evals instructions end -->

@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from evals._utils import to_jsonable
+from prism_evals._utils import to_jsonable
 
 
 ScoreValue = bool | int | float

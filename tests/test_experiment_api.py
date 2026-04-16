@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from evals import Experiment, ModelConfig
+from prism_evals import Experiment, ModelConfig
 
 
 def write_dataset(tmp_path):

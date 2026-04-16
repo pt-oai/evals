@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from evals.console import aggregate_usage_by_model, collect_score_values, format_score_cell
-from evals.models import EvalResult, ItemRunRecord, StepRecord, TokenUsage
+from prism_evals.console import aggregate_usage_by_model, collect_score_values, format_score_cell
+from prism_evals.models import EvalResult, ItemRunRecord, StepRecord, TokenUsage
 
 
 def record(

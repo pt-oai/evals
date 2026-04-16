@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from evals import ModelConfig
-from evals.openai import ExperimentContext, extract_usage
+from prism_evals import ModelConfig
+from prism_evals.openai import ExperimentContext, extract_usage
 
 
 @pytest.mark.parametrize("capture_raw", [True, False])

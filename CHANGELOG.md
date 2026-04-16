@@ -5,18 +5,29 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.6.0] - 2026-04-16
+
+### Changed
+
+- Rebranded the package to Prism Evals.
+- Renamed the Python distribution to `prism-evals` and the import package to
+  `prism_evals`.
+- Added `prism`, `prism-evals`, and `pe` console scripts.
+- Updated the local viewer, scaffolded instructions, docs, examples, and tests
+  to use Prism Evals naming.
+
 ## [0.5.1] - 2026-04-15
 
 ### Fixed
 
-- Bundle the local viewer with Python wheels so installed packages can launch `pt-evals view`.
+- Bundle the local viewer with Python wheels so installed packages can launch `prism view`.
 - Install viewer npm dependencies automatically on first launch when they are missing.
 
 ## [0.5.0] - 2026-04-15
 
 ### Added
 
-- `pt-evals view <runs_dir>` opens a read-only local Next.js viewer for parent directories of eval runs.
+- `prism view <runs_dir>` opens a read-only local Next.js viewer for parent directories of eval runs.
 - Viewer pages for all runs, run detail, score matrices, artifact downloads, and lane comparisons across `run + model_key` pairs.
 
 ## [0.4.5] - 2026-04-15
@@ -41,7 +52,7 @@ versions may include API changes as the experiment framework settles.
 
 ### Fixed
 
-- Declared the `src/evals` package for Hatchling wheel builds so `pt-evals` installs correctly from Git tags.
+- Declared the `src/prism_evals` package for Hatchling wheel builds so `prism-evals` installs correctly from Git tags.
 
 ## [0.4.1] - 2026-04-15
 
@@ -84,7 +95,7 @@ versions may include API changes as the experiment framework settles.
 
 ### Added
 
-- Initial `evals` Python package with decorator-style experiments.
+- Initial Prism Evals Python package with decorator-style experiments.
 - `Experiment`, `ModelConfig`, `TaskOutput`, and `EvalResult` public APIs.
 - OpenAI Responses API wrapper for automatic raw request/response capture.
 - Token usage capture for input, cached, output, reasoning, and total tokens.

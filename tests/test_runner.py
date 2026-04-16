@@ -4,8 +4,8 @@ import csv
 
 import pytest
 
-from evals import EvalResult, Experiment, ModelConfig
-from evals.runner import item_run_id, load_dataset
+from prism_evals import EvalResult, Experiment, ModelConfig
+from prism_evals.runner import item_run_id, load_dataset
 
 
 def write_dataset(tmp_path, rows):

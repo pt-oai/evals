@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from evals import Experiment, ModelConfig
-from evals.storage import Storage
+from prism_evals import Experiment, ModelConfig
+from prism_evals.storage import Storage
 
 
 def write_dataset(tmp_path):

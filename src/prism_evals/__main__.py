@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from evals.cli import main
+from prism_evals.cli import main
 
 
 if __name__ == "__main__":

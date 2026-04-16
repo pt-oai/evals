@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from evals.scaffold import install_agents_md
+from prism_evals.scaffold import install_agents_md
 
 DEFAULT_RELEASE_REPOSITORY = "https://github.com/pt-oai/evals.git"
 
@@ -33,7 +33,7 @@ def validate_runs_parent(path: str | Path) -> Path:
 
 
 def viewer_dir() -> Path:
-    override = os.environ.get("PT_EVALS_VIEWER_DIR")
+    override = os.environ.get("PRISM_VIEWER_DIR")
     if override:
         return Path(override).expanduser().resolve()
     source_checkout = Path(__file__).resolve().parents[2] / "viewer"
@@ -71,7 +71,7 @@ def viewer_dependencies_installed(app_dir: Path) -> bool:
 
 def viewer_version(app_dir: Path) -> str:
     try:
-        return version("pt-evals")
+        return version("prism-evals")
     except PackageNotFoundError:
         package_json = app_dir / "package.json"
         if package_json.exists():
@@ -87,7 +87,7 @@ def version_tag(package_version: str) -> str:
 
 
 def latest_viewer_tag(app_dir: Path, current_tag: str) -> str:
-    override = os.environ.get("PT_EVALS_VIEWER_LATEST_TAG")
+    override = os.environ.get("PRISM_VIEWER_LATEST_TAG")
     if override:
         return override
 
@@ -167,15 +167,15 @@ def run_viewer(
     env = os.environ.copy()
     package_version = viewer_version(app_dir)
     current_tag = version_tag(package_version)
-    env["PT_EVALS_RUNS_DIR"] = str(resolved_runs_dir)
-    env["PT_EVALS_VIEWER_VERSION"] = package_version
-    env["PT_EVALS_VIEWER_TAG"] = current_tag
-    env["PT_EVALS_VIEWER_LATEST_TAG"] = latest_viewer_tag(app_dir, current_tag)
+    env["PRISM_RUNS_DIR"] = str(resolved_runs_dir)
+    env["PRISM_VIEWER_VERSION"] = package_version
+    env["PRISM_VIEWER_TAG"] = current_tag
+    env["PRISM_VIEWER_LATEST_TAG"] = latest_viewer_tag(app_dir, current_tag)
     env["NEXT_TELEMETRY_DISABLED"] = "1"
     env["WATCHPACK_POLLING"] = env.get("WATCHPACK_POLLING", "true")
     url = f"http://{host}:{port}"
 
-    print(f"Opening eval runs from {resolved_runs_dir}", flush=True)
+    print(f"Opening Prism Evals runs from {resolved_runs_dir}", flush=True)
     print(f"Viewer: {url}", flush=True)
     process = subprocess.Popen(
         ["npm", "run", "dev", "--", "--hostname", host, "--port", str(port)],
@@ -193,12 +193,12 @@ def run_viewer(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="pt-evals")
+    parser = argparse.ArgumentParser(prog="prism")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser(
         "init",
-        help="Add pt-evals instructions to a repo-root AGENTS.md file.",
+        help="Add Prism Evals instructions to a repo-root AGENTS.md file.",
     )
     init_parser.add_argument(
         "--repo-root",
@@ -213,7 +213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     init_parser.add_argument(
         "--no-append",
         action="store_true",
-        help="Fail if AGENTS.md already exists without pt-evals instructions.",
+        help="Fail if AGENTS.md already exists without Prism Evals instructions.",
     )
 
     view_parser = subparsers.add_parser(
@@ -251,13 +251,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 append=not args.no_append,
             )
         except Exception as exc:
-            print(f"pt-evals init failed: {exc}", file=sys.stderr)
+            print(f"prism init failed: {exc}", file=sys.stderr)
             return 1
 
         if action == "unchanged":
-            print(f"pt-evals instructions already present in {path}")
+            print(f"Prism Evals instructions already present in {path}")
         else:
-            print(f"{action.capitalize()} pt-evals instructions in {path}")
+            print(f"{action.capitalize()} Prism Evals instructions in {path}")
         return 0
 
     if args.command == "view":
@@ -269,7 +269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 open_browser=not args.no_open,
             )
         except Exception as exc:
-            print(f"pt-evals view failed: {exc}", file=sys.stderr)
+            print(f"prism view failed: {exc}", file=sys.stderr)
             return 1
 
     parser.error(f"unknown command: {args.command}")

@@ -1,8 +1,9 @@
-# evals
+# Prism Evals
 
-`evals` is a local Python framework for executable OpenAI Responses API experiments.
+Prism Evals is a local Python framework for executable OpenAI Responses API experiments.
 
-The package distribution is named `pt-evals`, but the Python import is `evals`.
+The package distribution is `prism-evals`, the Python import is `prism_evals`,
+and the primary CLI is `prism`. The short CLI alias is `pe`.
 
 Experiments are plain Python files. Define the dataset, models, workflow, and evals in one place, then run the file:
 
@@ -18,8 +19,10 @@ From the repo where you want to write and run evals:
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.5.6"
-pt-evals init
+python -m pip install "prism-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.6.0"
+prism init
+# or: prism-evals init
+# or: pe init
 ```
 
 Set your OpenAI API key:
@@ -43,7 +46,7 @@ Create an eval:
 
 ```bash
 cat > qa_smoke.py <<'PY'
-from evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
+from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
 
 exp = Experiment(
     name="qa_smoke",
@@ -86,11 +89,11 @@ Run the eval and open the local viewer:
 
 ```bash
 python qa_smoke.py
-pt-evals view runs/
+prism view runs/
 ```
 
 The init command creates `AGENTS.md` if it does not exist. If `AGENTS.md`
-already exists, it appends a marked `pt-evals` section unless that section is
+already exists, it appends a marked Prism Evals section unless that section is
 already present. Use `--force` to overwrite the file.
 
 For local development on this package checkout:
@@ -126,7 +129,7 @@ item-2,Name the color of a clear daytime sky.,blue
 Create an experiment file:
 
 ```python
-from evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
+from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
 
 exp = Experiment(
     name="qa_smoke",
@@ -169,7 +172,7 @@ if __name__ == "__main__":
 Use `ctx.step(...)` when one dataset item needs a chain of work. Step evals always receive that step's output.
 
 ```python
-from evals import ApproxEqual, Contains, Experiment, JsonPathExists, ModelConfig, NonEmpty, item, out, text
+from prism_evals import ApproxEqual, Contains, Experiment, JsonPathExists, ModelConfig, NonEmpty, item, out, text
 
 exp = Experiment(name="score_chain", dataset="datasets/scoring.csv", output_dir="runs")
 exp.model(ModelConfig(key="gpt5_low", model="gpt-5", params={"reasoning": {"effort": "low"}}))
@@ -219,7 +222,7 @@ Responses API structured output works through the wrapped `ctx.responses.create(
 ```python
 import json
 
-from evals import Experiment, JsonPathExists, ModelConfig, TaskOutput, out
+from prism_evals import Experiment, JsonPathExists, ModelConfig, TaskOutput, out
 
 exp = Experiment(name="extract_people", dataset="datasets/people.csv", output_dir="runs")
 exp.model(ModelConfig(key="gpt5_low", model="gpt-5", params={"reasoning": {"effort": "low"}}))
@@ -260,7 +263,7 @@ if __name__ == "__main__":
 Built-ins are registered directly with `exp.eval("key", evaluator)` or as step eval tuples.
 
 ```python
-from evals import ApproxEqual, Contains, Equal, JsonPathExists, RegexMatch, item, out, step, step_text, text
+from prism_evals import ApproxEqual, Contains, Equal, JsonPathExists, RegexMatch, item, out, step, step_text, text
 
 exp.eval("exact_answer", Equal(actual=text(), expected=item("expected")))
 exp.eval("score_equal", Equal(actual=out("score"), expected=item("score", cast=float)))
@@ -300,7 +303,7 @@ Selectors:
 Custom eval functions receive `(item, model, output, ctx)` and can return booleans, numbers, dictionaries, `EvalResult` objects, or lists of `EvalResult` objects.
 
 ```python
-from evals import EvalResult
+from prism_evals import EvalResult
 
 def contains_expected(item, model, output, ctx):
     return item["expected"].lower() in output.text.lower()
@@ -350,7 +353,7 @@ The local viewer opens a parent runs directory and shows every child run folder
 that contains `manifest.json`:
 
 ```bash
-pt-evals view runs/
+prism view runs/
 ```
 
 The viewer is read-only. It shows an all-runs table, per-run item details, score

@@ -1,9 +1,9 @@
 import type { ColumnOrderState, SortingState, VisibilityState } from "@tanstack/react-table";
 
 const version = 1;
-const runsKey = "pt-evals.viewer.runs";
-const compareKey = "pt-evals.viewer.compare";
-const runDetailKeyPrefix = "pt-evals.viewer.run-detail";
+const runsKey = "prism-evals.viewer.runs";
+const compareKey = "prism-evals.viewer.compare";
+const runDetailKeyPrefix = "prism-evals.viewer.run-detail";
 
 export type StorageLike = Pick<Storage, "getItem" | "removeItem" | "setItem">;
 

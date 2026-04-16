@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from evals.models import ErrorRecord
+from prism_evals.models import ErrorRecord
 
 
 def exception_to_error(exc: BaseException) -> ErrorRecord:

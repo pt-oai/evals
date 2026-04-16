@@ -18,7 +18,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from evals.models import ItemRunRecord, ModelConfig
+from prism_evals.models import ItemRunRecord, ModelConfig
 
 
 @dataclass
@@ -63,7 +63,7 @@ class ConsoleReporter:
         if skipped:
             summary += f"\nResumed: {skipped} already complete"
         summary += f"\nOutput: {run_dir}"
-        self.console.print(Panel(summary, title="evals", border_style="cyan"))
+        self.console.print(Panel(summary, title="Prism Evals", border_style="cyan"))
 
         if self.display in {"progress", "debug"}:
             self.progress = Progress(

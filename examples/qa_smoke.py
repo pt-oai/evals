@@ -1,4 +1,4 @@
-from evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
+from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
 
 
 exp = Experiment(

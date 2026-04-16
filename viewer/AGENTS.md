@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This directory contains the local Next.js viewer for `pt-evals` run artifacts.
+This directory contains the local Next.js viewer for Prism Evals run artifacts.
 Use these instructions in addition to the repo root `AGENTS.md`.
 
 ## UI Preferences And Persistence
