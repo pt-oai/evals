@@ -4,8 +4,11 @@ import pytest
 
 from evals.cli import (
     ensure_viewer_dependencies,
+    newest_version_tag,
     main,
     validate_runs_parent,
+    version_key,
+    version_tag,
     viewer_dependencies_installed,
     viewer_dir,
 )
@@ -96,3 +99,13 @@ def test_ensure_viewer_dependencies_runs_npm_install(tmp_path, monkeypatch):
     ensure_viewer_dependencies(app_dir)
 
     assert calls == [(["npm", "install"], app_dir, True)]
+
+
+def test_version_tag_adds_v_prefix():
+    assert version_tag("0.5.8") == "v0.5.8"
+    assert version_tag("v0.5.8") == "v0.5.8"
+
+
+def test_newest_version_tag_sorts_semver_tags():
+    assert newest_version_tag(["v0.5.8", "v0.5.10", "not-a-version"]) == "v0.5.10"
+    assert version_key("refs/tags/v1.2.3") == (1, 2, 3)

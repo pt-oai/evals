@@ -225,3 +225,9 @@ export interface CompareResult {
   metrics: ScoreMetric[];
   rows: CompareRow[];
 }
+
+export interface ViewerInfo {
+  tag: string;
+  latestTag: string | null;
+  updateAvailable: boolean;
+}

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pt-evals"
-version = "0.5.8"
+version = "0.5.9"
 description = "Local Python experiment framework for OpenAI Responses API evals."
 readme = "README.md"
 requires-python = ">=3.12"

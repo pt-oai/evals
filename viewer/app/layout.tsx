@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { loadViewerInfo } from "../lib/server/viewer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -8,15 +9,29 @@ export const metadata: Metadata = {
   description: "Review local eval runs.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const viewerInfo = loadViewerInfo();
+
   return (
     <html lang="en">
       <body>
         <header className="border-b border-line bg-white/90">
           <div className="flex w-full flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between">
-            <Link href="/" className="text-2xl font-semibold text-ink">
-              Eval Runs
-            </Link>
+            <div>
+              <Link href="/" className="text-2xl font-semibold text-ink">
+                Eval Runs
+              </Link>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="font-medium">{viewerInfo.tag}</span>
+                {viewerInfo.updateAvailable && viewerInfo.latestTag ? (
+                  <span className="rounded-md bg-mist px-1.5 py-0.5 font-medium text-leaf">
+                    {viewerInfo.latestTag} available
+                  </span>
+                ) : null}
+              </div>
+            </div>
             <nav className="flex flex-wrap items-center gap-2 text-sm">
               <Link
                 href="/"

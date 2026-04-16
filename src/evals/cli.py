@@ -9,9 +9,12 @@ import sys
 import time
 import webbrowser
 from collections.abc import Sequence
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from evals.scaffold import install_agents_md
+
+DEFAULT_RELEASE_REPOSITORY = "https://github.com/pt-oai/evals.git"
 
 
 def validate_runs_parent(path: str | Path) -> Path:
@@ -66,6 +69,86 @@ def viewer_dependencies_installed(app_dir: Path) -> bool:
     return True
 
 
+def viewer_version(app_dir: Path) -> str:
+    try:
+        return version("pt-evals")
+    except PackageNotFoundError:
+        package_json = app_dir / "package.json"
+        if package_json.exists():
+            package_data = json.loads(package_json.read_text(encoding="utf-8"))
+            package_version = package_data.get("version")
+            if isinstance(package_version, str) and package_version:
+                return package_version
+        return "0.0.0"
+
+
+def version_tag(package_version: str) -> str:
+    return package_version if package_version.startswith("v") else f"v{package_version}"
+
+
+def latest_viewer_tag(app_dir: Path, current_tag: str) -> str:
+    override = os.environ.get("PT_EVALS_VIEWER_LATEST_TAG")
+    if override:
+        return override
+
+    tags = [current_tag]
+    tags.extend(local_git_tags(app_dir))
+    tags.extend(remote_git_tags(app_dir))
+    return newest_version_tag(tags) or current_tag
+
+
+def newest_version_tag(tags: Sequence[str]) -> str | None:
+    valid_tags = [tag for tag in tags if version_key(tag)]
+    if not valid_tags:
+        return None
+    return max(valid_tags, key=version_key)
+
+
+def version_key(tag: str) -> tuple[int, ...]:
+    raw = tag.removeprefix("refs/tags/").removeprefix("v")
+    parts: list[int] = []
+    for part in raw.split("."):
+        if not part.isdigit():
+            return ()
+        parts.append(int(part))
+    return tuple(parts)
+
+
+def local_git_tags(app_dir: Path) -> list[str]:
+    result = run_git_command(
+        ["git", "-C", str(app_dir), "tag", "--list", "v[0-9]*", "--sort=-v:refname"],
+        timeout=2,
+    )
+    return result.splitlines()
+
+
+def remote_git_tags(app_dir: Path) -> list[str]:
+    remote = git_remote(app_dir) or DEFAULT_RELEASE_REPOSITORY
+    result = run_git_command(
+        ["git", "ls-remote", "--tags", "--refs", remote, "v[0-9]*"],
+        timeout=4,
+    )
+    tags: list[str] = []
+    for line in result.splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            tags.append(parts[1].removeprefix("refs/tags/"))
+    return tags
+
+
+def git_remote(app_dir: Path) -> str | None:
+    result = run_git_command(["git", "-C", str(app_dir), "remote", "get-url", "origin"], timeout=2)
+    return result.strip() or None
+
+
+def run_git_command(args: Sequence[str], *, timeout: int) -> str:
+    try:
+        result = subprocess.run(args, capture_output=True, check=False, text=True, timeout=timeout)
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return ""
+    return result.stdout if result.returncode == 0 else ""
+
+
 def run_viewer(
     runs_dir: str | Path,
     *,
@@ -82,7 +165,12 @@ def run_viewer(
     ensure_viewer_dependencies(app_dir)
 
     env = os.environ.copy()
+    package_version = viewer_version(app_dir)
+    current_tag = version_tag(package_version)
     env["PT_EVALS_RUNS_DIR"] = str(resolved_runs_dir)
+    env["PT_EVALS_VIEWER_VERSION"] = package_version
+    env["PT_EVALS_VIEWER_TAG"] = current_tag
+    env["PT_EVALS_VIEWER_LATEST_TAG"] = latest_viewer_tag(app_dir, current_tag)
     env["NEXT_TELEMETRY_DISABLED"] = "1"
     env["WATCHPACK_POLLING"] = env.get("WATCHPACK_POLLING", "true")
     url = f"http://{host}:{port}"
