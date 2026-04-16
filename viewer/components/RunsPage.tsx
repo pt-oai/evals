@@ -13,7 +13,7 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import {
   CartesianGrid,
   Line,
@@ -64,10 +64,12 @@ type ChartDatum = Record<string, string | number | null> & {
   runKey: string;
   runLabel: string;
 };
+type BestDirection = "min" | "max";
 
 const columnHelper = createColumnHelper<ModelRunRow>();
 const runTones = ["bg-white", "bg-slate-50"];
 const modelPalette = ["#334155", "#3b7662", "#4f46e5", "#0f766e", "#9333ea", "#0369a1", "#be185d", "#854d0e"];
+const bestTextClass = "font-semibold text-green-800";
 
 export function RunsPage() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -161,6 +163,7 @@ export function RunsPage() {
     () => chartRows.filter((row) => !effectiveHiddenModelKeys.includes(row.modelKey)),
     [chartRows, effectiveHiddenModelKeys],
   );
+  const bestValues = useMemo(() => buildRunBestValues(filteredRows, scoreMetrics), [filteredRows, scoreMetrics]);
 
   const columns = useMemo(
     () => [
@@ -208,48 +211,97 @@ export function RunsPage() {
         columnHelper.accessor((row) => row.scoreAggregates.find((score) => score.id === scoreMetric.id)?.mean ?? null, {
           id: scoreColumnId(scoreMetric.id),
           header: scoreMetric.label,
-          cell: ({ row }) => <ScoreCell score={row.original.scoreAggregates.find((item) => item.id === scoreMetric.id)} />,
+          enableSorting: false,
+          cell: ({ row }) => {
+            const score = row.original.scoreAggregates.find((item) => item.id === scoreMetric.id);
+            const columnId = scoreColumnId(scoreMetric.id);
+            return <ScoreCell score={score} isBest={isBestRunValue(row.original, columnId, score?.mean ?? null, bestValues)} />;
+          },
         }),
       ),
       columnHelper.accessor((row) => row.latency.avg, {
         id: "latencyAvg",
         header: "Avg time",
-        cell: ({ getValue }) => <span className="block min-w-16">{formatSeconds(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell isBest={isBestRunValue(row.original, "latencyAvg", row.original.latency.avg, bestValues)} className="min-w-16">
+            {formatSeconds(row.original.latency.avg)}
+          </MetricCell>
+        ),
       }),
       columnHelper.accessor((row) => row.latency.p50, {
         id: "latencyP50",
         header: "P50 time",
-        cell: ({ getValue }) => <span className="block min-w-16">{formatSeconds(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell isBest={isBestRunValue(row.original, "latencyP50", row.original.latency.p50, bestValues)} className="min-w-16">
+            {formatSeconds(row.original.latency.p50)}
+          </MetricCell>
+        ),
       }),
       columnHelper.accessor((row) => row.latency.p90, {
         id: "latencyP90",
         header: "P90 time",
-        cell: ({ getValue }) => <span className="block min-w-16">{formatSeconds(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell isBest={isBestRunValue(row.original, "latencyP90", row.original.latency.p90, bestValues)} className="min-w-16">
+            {formatSeconds(row.original.latency.p90)}
+          </MetricCell>
+        ),
       }),
       columnHelper.accessor((row) => row.usage.input_tokens, {
         id: "inputTokens",
         header: "Input tokens",
-        cell: ({ getValue }) => <span className="block min-w-20">{formatInt(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell isBest={isBestRunValue(row.original, "inputTokens", row.original.usage.input_tokens, bestValues)} className="min-w-20">
+            {formatInt(row.original.usage.input_tokens)}
+          </MetricCell>
+        ),
       }),
       columnHelper.accessor((row) => row.usage.cached_tokens, {
         id: "cachedTokens",
         header: "Cached tokens",
-        cell: ({ getValue }) => <span className="block min-w-20">{formatInt(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell isBest={isBestRunValue(row.original, "cachedTokens", row.original.usage.cached_tokens, bestValues)} className="min-w-20">
+            {formatInt(row.original.usage.cached_tokens)}
+          </MetricCell>
+        ),
       }),
       columnHelper.accessor((row) => row.usage.output_tokens, {
         id: "outputTokens",
         header: "Output tokens",
-        cell: ({ getValue }) => <span className="block min-w-20">{formatInt(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell isBest={isBestRunValue(row.original, "outputTokens", row.original.usage.output_tokens, bestValues)} className="min-w-20">
+            {formatInt(row.original.usage.output_tokens)}
+          </MetricCell>
+        ),
       }),
       columnHelper.accessor((row) => row.usage.reasoning_tokens, {
         id: "reasoningTokens",
         header: "Reasoning tokens",
-        cell: ({ getValue }) => <span className="block min-w-24">{formatInt(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell isBest={isBestRunValue(row.original, "reasoningTokens", row.original.usage.reasoning_tokens, bestValues)} className="min-w-24">
+            {formatInt(row.original.usage.reasoning_tokens)}
+          </MetricCell>
+        ),
       }),
       columnHelper.accessor((row) => row.usage.total_tokens, {
         id: "totalTokens",
         header: "Total tokens",
-        cell: ({ getValue }) => <span className="block min-w-20 font-medium text-ink">{formatInt(getValue())}</span>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <MetricCell
+            isBest={isBestRunValue(row.original, "totalTokens", row.original.usage.total_tokens, bestValues)}
+            className="min-w-20"
+            strong
+          >
+            {formatInt(row.original.usage.total_tokens)}
+          </MetricCell>
+        ),
       }),
       columnHelper.display({
         id: "hashes",
@@ -263,7 +315,7 @@ export function RunsPage() {
         ),
       }),
     ],
-    [scoreMetrics],
+    [bestValues, scoreMetrics],
   );
 
   const columnIds = useMemo(() => columns.map((column) => column.id).filter((id): id is string => Boolean(id)), [columns]);
@@ -747,19 +799,33 @@ function ChartTooltip({
   );
 }
 
-function ScoreCell({ score }: { score?: ScoreAggregate }) {
+function ScoreCell({ isBest, score }: { isBest: boolean; score?: ScoreAggregate }) {
   if (!score) {
     return <span className="block min-w-20">-</span>;
   }
   return (
-    <div className="min-w-24 whitespace-nowrap">
-      <span className="font-medium text-ink">{formatNumber(score.mean)}</span>
-      <span className="ml-1 text-[11px] text-slate-500">
+    <div className={`min-w-24 whitespace-nowrap ${isBest ? bestTextClass : ""}`}>
+      <span className={isBest ? "" : "font-medium text-ink"}>{formatNumber(score.mean)}</span>
+      <span className={`ml-1 text-[11px] ${isBest ? "text-green-800" : "text-slate-500"}`}>
         ({formatInt(score.count)})
         {score.errorCount ? <span className="ml-2 font-semibold text-coral">{formatInt(score.errorCount)} errors</span> : null}
       </span>
     </div>
   );
+}
+
+function MetricCell({
+  children,
+  className = "",
+  isBest,
+  strong = false,
+}: {
+  children: ReactNode;
+  className?: string;
+  isBest: boolean;
+  strong?: boolean;
+}) {
+  return <span className={`block ${className} ${isBest ? bestTextClass : strong ? "font-medium text-ink" : ""}`}>{children}</span>;
 }
 
 function itemLabelForRun(modelSummaries: ModelRunSummary[]): string {
@@ -781,6 +847,57 @@ function modelRowsForRuns(runs: RunSummary[]): ModelRunRow[] {
       runItemsLabel: itemLabelForRun(run.modelSummaries),
     })),
   );
+}
+
+function buildRunBestValues(rows: ModelRunRow[], scoreMetrics: ScoreAggregate[]): Map<string, number> {
+  const byRun = new Map<string, ModelRunRow[]>();
+  for (const row of rows) {
+    byRun.set(row.runKey, [...(byRun.get(row.runKey) ?? []), row]);
+  }
+
+  const bestValues = new Map<string, number>();
+  for (const [runKey, runRows] of byRun) {
+    for (const metric of scoreMetrics) {
+      setBestValue(bestValues, runKey, scoreColumnId(metric.id), runRows, "max", (row) => {
+        return row.scoreAggregates.find((score) => score.id === metric.id)?.mean ?? null;
+      });
+    }
+    setBestValue(bestValues, runKey, "latencyAvg", runRows, "min", (row) => row.latency.avg);
+    setBestValue(bestValues, runKey, "latencyP50", runRows, "min", (row) => row.latency.p50);
+    setBestValue(bestValues, runKey, "latencyP90", runRows, "min", (row) => row.latency.p90);
+    setBestValue(bestValues, runKey, "inputTokens", runRows, "min", (row) => row.usage.input_tokens);
+    setBestValue(bestValues, runKey, "cachedTokens", runRows, "min", (row) => row.usage.cached_tokens);
+    setBestValue(bestValues, runKey, "outputTokens", runRows, "min", (row) => row.usage.output_tokens);
+    setBestValue(bestValues, runKey, "reasoningTokens", runRows, "min", (row) => row.usage.reasoning_tokens);
+    setBestValue(bestValues, runKey, "totalTokens", runRows, "min", (row) => row.usage.total_tokens);
+  }
+  return bestValues;
+}
+
+function setBestValue(
+  bestValues: Map<string, number>,
+  runKey: string,
+  columnId: string,
+  rows: ModelRunRow[],
+  direction: BestDirection,
+  valueForRow: (row: ModelRunRow) => number | null,
+) {
+  const values = rows.map(valueForRow).filter((value): value is number => value !== null && Number.isFinite(value));
+  if (!values.length) {
+    return;
+  }
+  bestValues.set(bestValueKey(runKey, columnId), direction === "min" ? Math.min(...values) : Math.max(...values));
+}
+
+function isBestRunValue(row: ModelRunRow, columnId: string, value: number | null | undefined, bestValues: Map<string, number>): boolean {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return false;
+  }
+  return bestValues.get(bestValueKey(row.runKey, columnId)) === value;
+}
+
+function bestValueKey(runKey: string, columnId: string): string {
+  return `${runKey}\u0000${columnId}`;
 }
 
 function newestRuns(runs: RunSummary[], count: number): RunSummary[] {

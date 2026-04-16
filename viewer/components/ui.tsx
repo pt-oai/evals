@@ -135,22 +135,28 @@ export function DataTable<T>({
           <thead className="bg-mist text-xs uppercase tracking-normal text-slate-600">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id} className="border-b border-line px-2 py-2 font-semibold">
-                    {header.isPlaceholder ? null : (
-                      <button
-                        type="button"
-                        onClick={header.column.getToggleSortingHandler()}
-                        className="flex w-full items-center justify-between gap-2 text-left"
-                      >
-                        <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
-                        <span className="text-slate-400">
-                          {header.column.getIsSorted() === "asc" ? "Asc" : header.column.getIsSorted() === "desc" ? "Desc" : ""}
-                        </span>
-                      </button>
-                    )}
-                  </th>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const label = header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext());
+                  const sorted = header.column.getIsSorted();
+                  return (
+                    <th key={header.id} className="border-b border-line px-2 py-2 font-semibold">
+                      {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className="flex w-full items-center justify-between gap-2 text-left"
+                        >
+                          <span>{label}</span>
+                          <span className="text-slate-400">{sorted === "asc" ? "Asc" : sorted === "desc" ? "Desc" : ""}</span>
+                        </button>
+                      ) : (
+                        <div className="flex w-full items-center justify-between gap-2 text-left">
+                          <span>{label}</span>
+                        </div>
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>

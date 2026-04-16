@@ -3,9 +3,7 @@
 import {
   createColumnHelper,
   getCoreRowModel,
-  getSortedRowModel,
   useReactTable,
-  type SortingState,
 } from "@tanstack/react-table";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -14,7 +12,6 @@ import { outputPreview, recordHasEvaluatorError, statusLabel } from "../lib/eval
 import {
   defaultComparePreferences,
   effectiveId,
-  effectiveSorting,
   missingReference,
   readComparePreferences,
   savedReference,
@@ -53,7 +50,6 @@ export function ComparePage() {
   const [moreTokensOnly, setMoreTokensOnly] = useState(false);
   const [failedOnly, setFailedOnly] = useState(false);
   const [evalErrorsOnly, setEvalErrorsOnly] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([]);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -71,7 +67,6 @@ export function ComparePage() {
     setMoreTokensOnly(preferences.moreTokensOnly);
     setFailedOnly(preferences.failedOnly);
     setEvalErrorsOnly(preferences.evalErrorsOnly);
-    setSorting(preferences.sorting);
     setPreferencesLoaded(true);
   }, []);
 
@@ -274,16 +269,11 @@ export function ComparePage() {
     [],
   );
 
-  const columnIds = useMemo(() => columns.map((column) => column.id).filter((id): id is string => Boolean(id)), [columns]);
-  const tableSorting = useMemo(() => effectiveSorting(sorting, columnIds), [sorting, columnIds]);
-
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { sorting: tableSorting },
-    onSortingChange: setSorting,
+    enableSorting: false,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   });
 
   const stats = useMemo(() => {
@@ -316,7 +306,7 @@ export function ComparePage() {
       moreTokensOnly,
       failedOnly,
       evalErrorsOnly,
-      sorting,
+      sorting: [],
     });
   }, [
     baselineLane,
@@ -335,7 +325,6 @@ export function ComparePage() {
     regressionsOnly,
     scoreFilter,
     slowerOnly,
-    sorting,
   ]);
 
   if (loading) {

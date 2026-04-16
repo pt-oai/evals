@@ -77,6 +77,23 @@ describe("artifact summaries", () => {
     expect(comparison.rows[0].newFailure).toBe(true);
     expect(comparison.rows[0].totalTokensDelta).toBe(8);
   });
+
+  it("orders compare rows by item id naturally", () => {
+    const baseline = { id: "a", runKey: "run-a", modelKey: "m1", label: "A" };
+    const candidate = { id: "b", runKey: "run-b", modelKey: "m2", label: "B" };
+    const comparison = buildCompareResult(
+      baseline,
+      candidate,
+      [
+        record("10", "m1", { exact: true }),
+        record("2", "m1", { exact: true }),
+        record("0", "m1", { exact: true }),
+      ],
+      [record("1", "m2", { exact: true }), record("11", "m2", { exact: true })],
+    );
+
+    expect(comparison.rows.map((row) => row.itemId)).toEqual(["0", "1", "2", "10", "11"]);
+  });
 });
 
 describe("server artifact loading", () => {

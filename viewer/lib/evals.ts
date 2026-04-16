@@ -43,6 +43,22 @@ export function metricLabel(metric: ScoreMetric): string {
   return metric.scope === "step" ? `${metric.stepKey} / ${metric.scoreKey}` : metric.scoreKey;
 }
 
+export function compareItemIds(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
+export function compareItemRunRecords(
+  left: Pick<ItemRunRecord, "item_id" | "item_index" | "repetition" | "model_key">,
+  right: Pick<ItemRunRecord, "item_id" | "item_index" | "repetition" | "model_key">,
+): number {
+  return (
+    compareItemIds(left.item_id, right.item_id) ||
+    left.item_index - right.item_index ||
+    left.repetition - right.repetition ||
+    left.model_key.localeCompare(right.model_key)
+  );
+}
+
 export function collectMetrics(records: ItemRunRecord[]): ScoreMetric[] {
   const metrics = new Map<string, ScoreMetric>();
   for (const record of records) {
@@ -196,7 +212,7 @@ export function buildCompareResult(
   const filteredCandidate = candidateRecords.filter((record) => record.model_key === candidate.modelKey);
   const baselineByKey = mapByItemRepetition(filteredBaseline);
   const candidateByKey = mapByItemRepetition(filteredCandidate);
-  const keys = [...new Set([...baselineByKey.keys(), ...candidateByKey.keys()])].sort();
+  const keys = [...new Set([...baselineByKey.keys(), ...candidateByKey.keys()])].sort(compareItemRepetitionKeys);
   const metrics = mergeMetrics(collectMetrics(filteredBaseline), collectMetrics(filteredCandidate));
   const rows: CompareRow[] = keys.map((key) => {
     const baselineRecord = baselineByKey.get(key);
@@ -313,6 +329,12 @@ function mapByItemRepetition(records: ItemRunRecord[]): Map<string, ItemRunRecor
 
 function itemRepetitionKey(record: ItemRunRecord): string {
   return `${record.item_id}\u0000${record.repetition}`;
+}
+
+function compareItemRepetitionKeys(left: string, right: string): number {
+  const [leftItemId, leftRepetition = "0"] = left.split("\u0000");
+  const [rightItemId, rightRepetition = "0"] = right.split("\u0000");
+  return compareItemIds(leftItemId, rightItemId) || Number(leftRepetition) - Number(rightRepetition);
 }
 
 function* iterMetricResults(records: ItemRunRecord[], metric: ScoreMetric): Iterable<EvalResult> {

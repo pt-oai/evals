@@ -3,16 +3,15 @@
 import {
   createColumnHelper,
   getCoreRowModel,
-  getSortedRowModel,
   useReactTable,
   type Row,
-  type SortingState,
 } from "@tanstack/react-table";
 import Link from "next/link";
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import {
   formatNumber,
+  compareItemRunRecords,
   recordHasEvaluatorError,
   recordScore,
   scoreNumber,
@@ -21,7 +20,6 @@ import {
   availableReferenceIds,
   defaultRunDetailPreferences,
   effectiveId,
-  effectiveSorting,
   missingReference,
   readRunDetailPreferences,
   savedReference,
@@ -48,6 +46,7 @@ type DetailRow = ItemRunRecord & { itemGroupIndex: number; itemGroupKey: string 
 
 const columnHelper = createColumnHelper<DetailRow>();
 const itemTones = ["bg-white", "bg-slate-50"];
+const bestTextClass = "font-semibold text-green-800";
 
 type DetailTab = "dataset" | "output" | "scores" | "steps" | "calls" | "data" | "error";
 
@@ -66,7 +65,6 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
   const [selected, setSelected] = useState<ItemRunRecord | null>(null);
   const [tab, setTab] = useState<DetailTab>("output");
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "item_index", desc: false }]);
 
   useEffect(() => {
     const preferences = readRunDetailPreferences(runKey);
@@ -78,7 +76,6 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
     setThreshold(preferences.threshold);
     setFailedOnly(preferences.failedOnly);
     setEvalErrorsOnly(preferences.evalErrorsOnly);
-    setSorting(preferences.sorting.length ? preferences.sorting : defaultRunDetailPreferences.sorting);
     setPreferencesLoaded(true);
   }, [runKey]);
 
@@ -165,7 +162,7 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
         .join(" ")
         .toLowerCase()
         .includes(needle);
-    }).map((record) => {
+    }).sort(compareItemRunRecords).map((record) => {
       const itemGroupKey = itemRowGroupKey(record);
       if (!groupIndexByKey.has(itemGroupKey)) {
         groupIndexByKey.set(itemGroupKey, groupIndexByKey.size);
@@ -263,16 +260,11 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
     [detail?.metrics],
   );
 
-  const columnIds = useMemo(() => columns.map((column) => column.id).filter((id): id is string => Boolean(id)), [columns]);
-  const tableSorting = useMemo(() => effectiveSorting(sorting, columnIds), [sorting, columnIds]);
-
   const table = useReactTable({
     data: filteredRecords,
     columns,
-    state: { sorting: tableSorting },
-    onSortingChange: setSorting,
+    enableSorting: false,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   });
 
   const scoreMatrix = useMemo(() => {
@@ -300,7 +292,7 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
       threshold,
       failedOnly,
       evalErrorsOnly,
-      sorting,
+      sorting: [],
     });
   }, [
     detail,
@@ -315,7 +307,6 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
     query,
     runKey,
     scoreFilter,
-    sorting,
     stepFilter,
     stepReferences,
     threshold,
@@ -478,13 +469,9 @@ function ScoreMatrix({
                     const isBest = value !== null && best !== null && value === best;
                     return (
                       <td key={model} className="px-3 py-3 text-right text-slate-700">
-                        <span
-                          className={`inline-flex min-w-28 justify-end rounded-md border px-2 py-1 ${
-                            isBest ? "border-leaf/30 bg-leaf/10 font-semibold text-leaf" : "border-transparent"
-                          }`}
-                        >
+                        <span className={`inline-flex min-w-28 justify-end ${isBest ? bestTextClass : ""}`}>
                           {formatNumber(value)}{" "}
-                          <span className={`ml-1 text-xs ${isBest ? "text-leaf/70" : "text-slate-400"}`}>
+                          <span className={`ml-1 text-xs ${isBest ? "text-green-800" : "text-slate-400"}`}>
                             ({row.byModel[model]?.count ?? 0})
                           </span>
                         </span>
@@ -663,12 +650,8 @@ function MetricMatrix({
                 return (
                   <td key={model.modelKey} className="px-3 py-3 text-right text-slate-700">
                     <span
-                      className={`inline-flex min-w-28 justify-end rounded-md border px-2 py-1 ${
-                        isBest
-                          ? "border-leaf/30 bg-leaf/10 font-semibold text-leaf"
-                          : row.strong
-                            ? "border-transparent font-semibold text-ink"
-                            : "border-transparent"
+                      className={`inline-flex min-w-28 justify-end ${
+                        isBest ? bestTextClass : row.strong ? "font-semibold text-ink" : ""
                       }`}
                     >
                       {row.format(value)}
