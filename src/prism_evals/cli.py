@@ -14,7 +14,11 @@ from pathlib import Path
 
 from prism_evals.scaffold import install_agents_md
 
-DEFAULT_RELEASE_REPOSITORY = "https://github.com/pt-oai/evals.git"
+DEFAULT_RELEASE_REPOSITORIES = (
+    "git@github.com:pt-oai/evals.git",
+    "https://github.com/pt-oai/evals.git",
+)
+RELEASE_REPOSITORY_ENV = "PRISM_RELEASE_REPOSITORY"
 
 
 def validate_runs_parent(path: str | Path) -> Path:
@@ -93,8 +97,9 @@ def latest_viewer_tag(app_dir: Path, current_tag: str) -> str:
         return override
 
     tags = [current_tag]
-    tags.extend(local_git_tags(app_dir))
-    tags.extend(remote_git_tags(app_dir))
+    if is_release_checkout(app_dir):
+        tags.extend(local_git_tags(app_dir))
+    tags.extend(remote_git_tags())
     return newest_version_tag(tags) or current_tag
 
 
@@ -123,18 +128,39 @@ def local_git_tags(app_dir: Path) -> list[str]:
     return result.splitlines()
 
 
-def remote_git_tags(app_dir: Path) -> list[str]:
-    remote = git_remote(app_dir) or DEFAULT_RELEASE_REPOSITORY
-    result = run_git_command(
-        ["git", "ls-remote", "--tags", "--refs", remote, "v[0-9]*"],
-        timeout=4,
-    )
+def remote_git_tags() -> list[str]:
+    for remote in release_repositories():
+        tags = tags_from_remote(remote)
+        if tags:
+            return tags
+    return []
+
+
+def tags_from_remote(remote: str) -> list[str]:
+    result = run_git_command(["git", "ls-remote", "--tags", "--refs", remote, "v[0-9]*"], timeout=4)
     tags: list[str] = []
     for line in result.splitlines():
         parts = line.split()
         if len(parts) >= 2:
             tags.append(parts[1].removeprefix("refs/tags/"))
     return tags
+
+
+def release_repositories() -> list[str]:
+    override = os.environ.get(RELEASE_REPOSITORY_ENV)
+    if override:
+        return [override]
+    return list(DEFAULT_RELEASE_REPOSITORIES)
+
+
+def is_release_checkout(app_dir: Path) -> bool:
+    remote = git_remote(app_dir)
+    return bool(remote and is_release_repository(remote))
+
+
+def is_release_repository(remote: str) -> bool:
+    normalized = remote.strip().rstrip("/").removesuffix(".git")
+    return normalized.endswith("github.com:pt-oai/evals") or normalized.endswith("github.com/pt-oai/evals")
 
 
 def git_remote(app_dir: Path) -> str | None:

@@ -7,6 +7,7 @@ import pytest
 
 from prism_evals.cli import (
     ensure_viewer_dependencies,
+    latest_viewer_tag,
     newest_version_tag,
     main,
     validate_runs_parent,
@@ -131,3 +132,43 @@ def test_version_tag_adds_v_prefix():
 def test_newest_version_tag_sorts_semver_tags():
     assert newest_version_tag(["v0.5.8", "v0.5.10", "not-a-version"]) == "v0.5.10"
     assert version_key("refs/tags/v1.2.3") == (1, 2, 3)
+
+
+def test_latest_viewer_tag_uses_release_repo_when_viewer_is_inside_another_repo(tmp_path, monkeypatch):
+    app_dir = tmp_path / "customer-repo" / ".venv" / "lib" / "python3.12" / "site-packages" / "prism_evals" / "viewer"
+    app_dir.mkdir(parents=True)
+    calls: list[list[str]] = []
+
+    def fake_git(args, *, timeout):
+        calls.append(list(args))
+        if args == ["git", "-C", str(app_dir), "remote", "get-url", "origin"]:
+            return "git@github.com:example/customer-evals.git\n"
+        if args[:4] == ["git", "-C", str(app_dir), "tag"]:
+            raise AssertionError("host repo tags should not be used for release checks")
+        if args == ["git", "ls-remote", "--tags", "--refs", "git@github.com:pt-oai/evals.git", "v[0-9]*"]:
+            return "abc123\trefs/tags/v0.6.4\n"
+        return ""
+
+    monkeypatch.delenv("PRISM_VIEWER_LATEST_TAG", raising=False)
+    monkeypatch.delenv("PRISM_RELEASE_REPOSITORY", raising=False)
+    monkeypatch.setattr("prism_evals.cli.run_git_command", fake_git)
+
+    assert latest_viewer_tag(app_dir, "v0.6.3") == "v0.6.4"
+    assert ["git", "ls-remote", "--tags", "--refs", "git@github.com:pt-oai/evals.git", "v[0-9]*"] in calls
+
+
+def test_latest_viewer_tag_accepts_release_repository_override(tmp_path, monkeypatch):
+    app_dir = tmp_path / "viewer"
+
+    def fake_git(args, *, timeout):
+        if args == ["git", "-C", str(app_dir), "remote", "get-url", "origin"]:
+            return ""
+        if args == ["git", "ls-remote", "--tags", "--refs", "ssh://example/release.git", "v[0-9]*"]:
+            return "abc123\trefs/tags/v0.7.0\n"
+        return ""
+
+    monkeypatch.delenv("PRISM_VIEWER_LATEST_TAG", raising=False)
+    monkeypatch.setenv("PRISM_RELEASE_REPOSITORY", "ssh://example/release.git")
+    monkeypatch.setattr("prism_evals.cli.run_git_command", fake_git)
+
+    assert latest_viewer_tag(app_dir, "v0.6.3") == "v0.7.0"
