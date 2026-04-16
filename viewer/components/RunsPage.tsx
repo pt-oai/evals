@@ -109,19 +109,9 @@ export function RunsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const recentRuns = useMemo(() => newestRuns(runs, 5), [runs]);
-
-  const modelRows = useMemo(
-    () =>
-      recentRuns.flatMap((run, runGroupIndex) =>
-        run.modelSummaries.map((modelSummary) => ({
-          ...modelSummary,
-          runGroupIndex,
-          runItemsLabel: itemLabelForRun(run.modelSummaries),
-        })),
-      ),
-    [recentRuns],
-  );
+  const chartRuns = useMemo(() => newestRuns(runs, 10), [runs]);
+  const modelRows = useMemo(() => modelRowsForRuns(runs), [runs]);
+  const chartRows = useMemo(() => modelRowsForRuns(chartRuns), [chartRuns]);
 
   const modelOptions = useMemo(() => [...new Set(modelRows.map((row) => row.modelKey))].sort(), [modelRows]);
   const effectiveHiddenModelKeys = useMemo(
@@ -166,6 +156,10 @@ export function RunsPage() {
   const filteredRows = useMemo(
     () => modelRows.filter((row) => !effectiveHiddenModelKeys.includes(row.modelKey)),
     [effectiveHiddenModelKeys, modelRows],
+  );
+  const filteredChartRows = useMemo(
+    () => chartRows.filter((row) => !effectiveHiddenModelKeys.includes(row.modelKey)),
+    [chartRows, effectiveHiddenModelKeys],
   );
 
   const columns = useMemo(
@@ -411,7 +405,7 @@ export function RunsPage() {
       <RunCharts
         charts={charts}
         metrics={chartMetrics}
-        rows={filteredRows}
+        rows={filteredChartRows}
         onOpen={setExpandedChartId}
         onRemove={(chartId) => {
           setChartsTouched(true);
@@ -434,7 +428,7 @@ export function RunsPage() {
       {expandedChart ? (
         <ChartModal
           metric={chartMetrics.find((metric) => metric.id === expandedChart.metricId) ?? null}
-          rows={filteredRows}
+          rows={filteredChartRows}
           onClose={() => setExpandedChartId(null)}
         />
       ) : null}
@@ -777,6 +771,16 @@ function itemLabelForRun(modelSummaries: ModelRunSummary[]): string {
     return `${formatInt(counts[0])} items`;
   }
   return `${formatInt(counts[0])}-${formatInt(counts[counts.length - 1])} items`;
+}
+
+function modelRowsForRuns(runs: RunSummary[]): ModelRunRow[] {
+  return runs.flatMap((run, runGroupIndex) =>
+    run.modelSummaries.map((modelSummary) => ({
+      ...modelSummary,
+      runGroupIndex,
+      runItemsLabel: itemLabelForRun(run.modelSummaries),
+    })),
+  );
 }
 
 function newestRuns(runs: RunSummary[], count: number): RunSummary[] {
