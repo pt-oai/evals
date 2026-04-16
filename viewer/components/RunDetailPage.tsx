@@ -738,8 +738,13 @@ function RecordDrawer({
               </div>
               <h2 className="mt-1 text-2xl font-semibold text-ink">{record.item_id}</h2>
             </div>
-            <button type="button" onClick={onClose} className="rounded-md border border-line px-3 py-2 text-sm font-semibold text-ink hover:border-ink">
-              Close
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-lg font-light leading-none text-slate-500 hover:bg-mist hover:text-ink"
+              aria-label="Close"
+            >
+              &times;
             </button>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">

@@ -541,7 +541,7 @@ function MissingChartCard({ chart, onRemove }: { chart: ChartConfig; onRemove: (
         <button
           type="button"
           onClick={() => onRemove(chart.id)}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-line text-lg leading-none text-ink hover:border-coral hover:text-coral"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-sm font-light leading-none text-slate-400 hover:bg-mist hover:text-coral"
           aria-label={`Remove ${chart.label ?? "unavailable metric"}`}
         >
           &times;
@@ -577,7 +577,7 @@ function ChartCard({
           <button
             type="button"
             onClick={() => onRemove(chart.id)}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-lg leading-none text-ink hover:border-coral hover:text-coral"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-sm font-light leading-none text-slate-400 hover:bg-mist hover:text-coral"
             aria-label={`Remove ${metric.label}`}
           >
             &times;
@@ -626,9 +626,10 @@ function ChartModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-line px-3 py-2 text-sm font-semibold text-ink hover:border-ink"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-lg font-light leading-none text-slate-500 hover:bg-mist hover:text-ink"
+            aria-label="Close"
           >
-            Close
+            &times;
           </button>
         </div>
         <div className="overflow-auto p-4">

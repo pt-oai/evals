@@ -206,6 +206,26 @@ Return `TaskOutput(text=..., value=...)` when the final output has both display
 text and structured data. Built-in selectors such as `text()`, `out("path")`,
 `step("step_key.path")`, and `step_text("step_key")` depend on that structure.
 
+## Viewer UI Preferences
+
+When editing the local Next.js viewer, optimize for dense eval inspection rather
+than marketing-style presentation:
+
+- Use the full viewport width for run tables, compare views, and charts.
+- Keep visible copy short and product-facing; avoid implementation details in
+  the UI.
+- Put related controls in the same toolbar row when space allows, with secondary
+  controls aligned to the right.
+- Prefer familiar icon-only controls for common actions such as close and remove.
+  Use a small, light `×` with an accessible label rather than bordered text
+  buttons.
+- Keep chart previews compact. Avoid legends or section labels in small cards
+  when the surrounding context already names the metric.
+- For run trend charts, show runs chronologically left to right so the newest
+  run is on the right.
+- Preserve user filters across summaries and charts; model filters should affect
+  both the table and chart previews.
+
 ## Testing Changes
 
 For this package repo:
