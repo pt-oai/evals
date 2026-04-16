@@ -18,6 +18,8 @@ DEFAULT_RELEASE_REPOSITORIES = (
     "git@github.com:pt-oai/evals.git",
     "https://github.com/pt-oai/evals.git",
 )
+DEFAULT_RELEASE_GITHUB_REPOSITORY = "pt-oai/evals"
+RELEASE_GITHUB_REPOSITORY_ENV = "PRISM_RELEASE_GITHUB_REPOSITORY"
 RELEASE_REPOSITORY_ENV = "PRISM_RELEASE_REPOSITORY"
 
 
@@ -129,6 +131,10 @@ def local_git_tags(app_dir: Path) -> list[str]:
 
 
 def remote_git_tags() -> list[str]:
+    if not os.environ.get(RELEASE_REPOSITORY_ENV):
+        tags = github_release_tags()
+        if tags:
+            return tags
     for remote in release_repositories():
         tags = tags_from_remote(remote)
         if tags:
@@ -136,8 +142,14 @@ def remote_git_tags() -> list[str]:
     return []
 
 
+def github_release_tags() -> list[str]:
+    repository = os.environ.get(RELEASE_GITHUB_REPOSITORY_ENV, DEFAULT_RELEASE_GITHUB_REPOSITORY)
+    result = run_git_command(["gh", "api", f"repos/{repository}/tags", "--paginate", "--jq", ".[].name"], timeout=10)
+    return result.splitlines()
+
+
 def tags_from_remote(remote: str) -> list[str]:
-    result = run_git_command(["git", "ls-remote", "--tags", "--refs", remote, "v[0-9]*"], timeout=4)
+    result = run_git_command(["git", "ls-remote", "--tags", "--refs", remote, "v[0-9]*"], timeout=10)
     tags: list[str] = []
     for line in result.splitlines():
         parts = line.split()

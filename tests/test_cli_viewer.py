@@ -134,6 +134,26 @@ def test_newest_version_tag_sorts_semver_tags():
     assert version_key("refs/tags/v1.2.3") == (1, 2, 3)
 
 
+def test_latest_viewer_tag_uses_github_cli_for_release_tags(tmp_path, monkeypatch):
+    app_dir = tmp_path / "viewer"
+
+    def fake_git(args, *, timeout):
+        if args == ["git", "-C", str(app_dir), "remote", "get-url", "origin"]:
+            return ""
+        if args == ["gh", "api", "repos/pt-oai/evals/tags", "--paginate", "--jq", ".[].name"]:
+            return "v0.6.4\nv0.6.3\n"
+        if args[:2] == ["git", "ls-remote"]:
+            raise AssertionError("git remotes should not be used when gh returns release tags")
+        return ""
+
+    monkeypatch.delenv("PRISM_VIEWER_LATEST_TAG", raising=False)
+    monkeypatch.delenv("PRISM_RELEASE_REPOSITORY", raising=False)
+    monkeypatch.delenv("PRISM_RELEASE_GITHUB_REPOSITORY", raising=False)
+    monkeypatch.setattr("prism_evals.cli.run_git_command", fake_git)
+
+    assert latest_viewer_tag(app_dir, "v0.6.3") == "v0.6.4"
+
+
 def test_latest_viewer_tag_uses_release_repo_when_viewer_is_inside_another_repo(tmp_path, monkeypatch):
     app_dir = tmp_path / "customer-repo" / ".venv" / "lib" / "python3.12" / "site-packages" / "prism_evals" / "viewer"
     app_dir.mkdir(parents=True)
