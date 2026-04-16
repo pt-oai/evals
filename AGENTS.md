@@ -163,9 +163,11 @@ steps. Filter by:
 Use `steps.csv` when debugging multi-step workflows. It shows each step's
 status, output text, token usage, latency, response ID, and `scores_json`.
 
-Use `results.jsonl` when full fidelity matters. It preserves nested records for
-items, final outputs, evals, generations, raw requests/responses when
-`capture_raw=True`, steps, errors, and usage.
+Use `results.jsonl` when full record structure matters. It preserves nested
+records for items, final outputs, evals, generations, raw requests/responses
+when `capture_raw=True`, steps, errors, and usage. Inline `data:` URLs in raw
+payloads are compacted by default with `redact_raw_data_urls=True`; set it to
+`False` only when byte-for-byte raw media payloads are required.
 
 ## Resume Behavior
 

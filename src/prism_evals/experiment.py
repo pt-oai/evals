@@ -29,6 +29,7 @@ class Experiment:
         max_retries: int = 3,
         fail_fast: bool = False,
         capture_raw: bool = True,
+        redact_raw_data_urls: bool = True,
         timestamp_output_dir: bool = True,
         artifacts: Iterable[str | Path] | None = None,
         display: str = "progress",
@@ -48,6 +49,7 @@ class Experiment:
         self.max_retries = max_retries
         self.fail_fast = fail_fast
         self.capture_raw = capture_raw
+        self.redact_raw_data_urls = redact_raw_data_urls
         self.timestamp_output_dir = timestamp_output_dir
         self.artifacts = tuple(artifacts or ())
         self.display = display

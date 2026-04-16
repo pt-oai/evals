@@ -337,7 +337,7 @@ runs/20260415-143205_qa_smoke/
 ```
 
 - `manifest.json` stores experiment-run settings, model configs, dataset hash, experiment hash, copied artifact metadata, and environment metadata.
-- `results.jsonl` stores full item-run records, including raw request/response data, final output, step records, scores, usage, latency, and errors.
+- `results.jsonl` stores full item-run records, including raw request/response data, final output, step records, scores, usage, latency, and errors. Inline `data:` URLs in raw payloads are compacted by default.
 - `results.csv` is a spreadsheet-friendly summary with one row per item run.
 - `scores.csv` is long-form score data with `scope` and `step_key` columns.
 - `steps.csv` is a spreadsheet-friendly summary with one row per step.
@@ -376,9 +376,15 @@ exp = Experiment(
     max_retries=3,
     fail_fast=False,
     capture_raw=True,
+    redact_raw_data_urls=True,
     timestamp_output_dir=True,
     artifacts=["prompts/system.md", "prompts/*.json"],
     display="progress",  # progress, quiet, debug
     metadata={"owner": "research"},
 )
 ```
+
+`redact_raw_data_urls=True` keeps multimodal runs compact by replacing inline
+base64 media in raw request/response payloads with a short deterministic marker
+containing the media type, hash, and size. Set it to `False` only when you need
+byte-for-byte raw media payloads in `results.jsonl`.

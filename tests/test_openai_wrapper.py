@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from prism_evals import ModelConfig
@@ -62,6 +64,68 @@ def test_step_records_only_generations_inside_step(fake_client):
     assert ctx.steps[0].key == "inside"
     assert len(ctx.steps[0].generations) == 1
     assert ctx.steps[0].generations[0].output_text == "answer: inside"
+
+
+def test_raw_request_redacts_data_urls_by_default(fake_client):
+    image_url = "data:image/jpeg;base64," + ("a" * 1024)
+
+    async def run():
+        ctx = ExperimentContext(
+            client=fake_client,
+            item={"question": "hello"},
+            model=ModelConfig(key="m1", model="gpt-test"),
+            item_run_id="item-run",
+            capture_raw=True,
+            max_retries=1,
+        )
+        await ctx.responses.create(
+            model="gpt-test",
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "what is this?"},
+                        {"type": "input_image", "image_url": image_url},
+                    ],
+                }
+            ],
+        )
+        return ctx
+
+    import asyncio
+
+    ctx = asyncio.run(run())
+    raw_image_url = ctx.generations[0].raw_request["input"][0]["content"][1]["image_url"]
+    assert raw_image_url.startswith("data:image/jpeg;base64,<redacted sha256=")
+    assert "chars=1047" in raw_image_url
+    assert "base64_chars=1024" in raw_image_url
+    assert image_url not in json.dumps(ctx.generations[0].raw_request)
+    assert fake_client.calls[0]["input"][0]["content"][1]["image_url"] == image_url
+
+
+def test_raw_request_data_url_redaction_can_be_disabled(fake_client):
+    image_url = "data:image/jpeg;base64," + ("a" * 1024)
+
+    async def run():
+        ctx = ExperimentContext(
+            client=fake_client,
+            item={"question": "hello"},
+            model=ModelConfig(key="m1", model="gpt-test"),
+            item_run_id="item-run",
+            capture_raw=True,
+            max_retries=1,
+            redact_raw_data_urls=False,
+        )
+        await ctx.responses.create(
+            model="gpt-test",
+            input=[{"role": "user", "content": [{"type": "input_image", "image_url": image_url}]}],
+        )
+        return ctx
+
+    import asyncio
+
+    ctx = asyncio.run(run())
+    assert ctx.generations[0].raw_request["input"][0]["content"][0]["image_url"] == image_url
 
 
 def test_extract_usage_supports_dict_response():

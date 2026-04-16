@@ -7,7 +7,7 @@ from typing import Any
 from openai import AsyncOpenAI
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
-from prism_evals._utils import to_jsonable, utc_now_iso
+from prism_evals._utils import raw_payload, utc_now_iso
 from prism_evals.errors import exception_to_error
 from prism_evals.evaluation import eval_definitions_from_specs, has_eval_errors, run_eval_definitions
 from prism_evals.models import GenerationRecord, ModelConfig, StepRecord, TaskOutput, TokenUsage
@@ -21,14 +21,20 @@ class ResponsesProxy:
         *,
         capture_raw: bool,
         max_retries: int,
+        redact_raw_data_urls: bool = True,
     ) -> None:
         self._client = client
         self._generations = generations
         self._capture_raw = capture_raw
+        self._redact_raw_data_urls = redact_raw_data_urls
         self._max_retries = max(1, max_retries)
 
     async def create(self, **kwargs: Any) -> Any:
-        raw_request = to_jsonable(kwargs) if self._capture_raw else None
+        raw_request = (
+            raw_payload(kwargs, redact_raw_data_urls=self._redact_raw_data_urls)
+            if self._capture_raw
+            else None
+        )
         started = time.perf_counter()
         try:
             response = await self._call_with_retries(**kwargs)
@@ -44,7 +50,11 @@ class ResponsesProxy:
             raise
 
         latency = time.perf_counter() - started
-        raw_response = to_jsonable(response) if self._capture_raw else None
+        raw_response = (
+            raw_payload(response, redact_raw_data_urls=self._redact_raw_data_urls)
+            if self._capture_raw
+            else None
+        )
         self._generations.append(
             GenerationRecord(
                 response_id=getattr(response, "id", None),
@@ -79,6 +89,7 @@ class ExperimentContext:
         item_run_id: str,
         capture_raw: bool,
         max_retries: int,
+        redact_raw_data_urls: bool = True,
         fail_fast: bool = False,
     ) -> None:
         self.client = client
@@ -95,6 +106,7 @@ class ExperimentContext:
             self.generations,
             capture_raw=capture_raw,
             max_retries=max_retries,
+            redact_raw_data_urls=redact_raw_data_urls,
         )
 
     @property

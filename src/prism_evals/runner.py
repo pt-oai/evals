@@ -152,6 +152,7 @@ class Runner:
             item_run_id=item_run_id_value,
             capture_raw=exp.capture_raw,
             max_retries=exp.max_retries,
+            redact_raw_data_urls=exp.redact_raw_data_urls,
             fail_fast=exp.fail_fast,
         )
         output: TaskOutput | None = None
@@ -243,6 +244,7 @@ class Runner:
                 "max_retries": exp.max_retries,
                 "fail_fast": exp.fail_fast,
                 "capture_raw": exp.capture_raw,
+                "redact_raw_data_urls": exp.redact_raw_data_urls,
                 "timestamp_output_dir": exp.timestamp_output_dir,
                 "artifacts": [str(artifact) for artifact in exp.artifacts],
                 "display": exp.display,

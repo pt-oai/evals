@@ -62,3 +62,36 @@ def to_jsonable(value: Any) -> Any:
         return to_jsonable(to_dict())
     return repr(value)
 
+
+def redact_data_urls(value: Any) -> Any:
+    if isinstance(value, str):
+        return _redact_data_url(value)
+    if isinstance(value, dict):
+        return {key: redact_data_urls(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_data_urls(item) for item in value]
+    return value
+
+
+def raw_payload(value: Any, *, redact_raw_data_urls: bool = True) -> Any:
+    payload = to_jsonable(value)
+    if not redact_raw_data_urls:
+        return payload
+    return redact_data_urls(payload)
+
+
+def _redact_data_url(value: str) -> str:
+    if not value.startswith("data:"):
+        return value
+    header, separator, data = value.partition(",")
+    if not separator:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    metadata = [
+        "redacted",
+        f"sha256={digest}",
+        f"chars={len(value)}",
+    ]
+    if ";base64" in header:
+        metadata.append(f"base64_chars={len(data)}")
+    return f"{header},<{' '.join(metadata)}>"

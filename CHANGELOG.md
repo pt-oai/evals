@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.6.7] - 2026-04-16
+
+### Added
+
+- Compact inline `data:` URLs in captured raw payloads by default with
+  `redact_raw_data_urls=True`.
+
 ## [0.6.0] - 2026-04-16
 
 ### Changed
