@@ -70,15 +70,16 @@ def viewer_dependencies_installed(app_dir: Path) -> bool:
 
 
 def viewer_version(app_dir: Path) -> str:
+    package_json = app_dir / "package.json"
+    if package_json.exists():
+        package_data = json.loads(package_json.read_text(encoding="utf-8"))
+        package_version = package_data.get("version")
+        if isinstance(package_version, str) and package_version:
+            return package_version
+
     try:
         return version("prism-evals")
     except PackageNotFoundError:
-        package_json = app_dir / "package.json"
-        if package_json.exists():
-            package_data = json.loads(package_json.read_text(encoding="utf-8"))
-            package_version = package_data.get("version")
-            if isinstance(package_version, str) and package_version:
-                return package_version
         return "0.0.0"
 
 
@@ -167,16 +168,18 @@ def run_viewer(
     env = os.environ.copy()
     package_version = viewer_version(app_dir)
     current_tag = version_tag(package_version)
+    latest_tag = latest_viewer_tag(app_dir, current_tag)
     env["PRISM_RUNS_DIR"] = str(resolved_runs_dir)
     env["PRISM_VIEWER_VERSION"] = package_version
     env["PRISM_VIEWER_TAG"] = current_tag
-    env["PRISM_VIEWER_LATEST_TAG"] = latest_viewer_tag(app_dir, current_tag)
+    env["PRISM_VIEWER_LATEST_TAG"] = latest_tag
     env["NEXT_TELEMETRY_DISABLED"] = "1"
     env["WATCHPACK_POLLING"] = env.get("WATCHPACK_POLLING", "true")
     url = f"http://{host}:{port}"
 
     print(f"Opening Prism Evals runs from {resolved_runs_dir}", flush=True)
     print(f"Viewer: {url}", flush=True)
+    print(f"Version: {current_tag} (latest: {latest_tag})", flush=True)
     process = subprocess.Popen(
         ["npm", "run", "dev", "--", "--hostname", host, "--port", str(port)],
         cwd=app_dir,

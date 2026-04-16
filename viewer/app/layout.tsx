@@ -34,7 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <span className="font-medium">{viewerInfo.tag}</span>
                 {viewerInfo.updateAvailable && viewerInfo.latestTag ? (
                   <span className="rounded-md bg-mist px-1.5 py-0.5 font-medium text-leaf">
-                    {viewerInfo.latestTag} available
+                    Update available: {viewerInfo.latestTag}
                   </span>
                 ) : null}
               </div>

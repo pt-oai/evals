@@ -14,6 +14,7 @@ from prism_evals.cli import (
     version_tag,
     viewer_dependencies_installed,
     viewer_dir,
+    viewer_version,
 )
 
 
@@ -66,6 +67,14 @@ def test_viewer_dir_uses_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("PRISM_VIEWER_DIR", str(override))
 
     assert viewer_dir() == override.resolve()
+
+
+def test_viewer_version_prefers_viewer_package_json(tmp_path):
+    app_dir = tmp_path / "viewer"
+    app_dir.mkdir()
+    (app_dir / "package.json").write_text('{"version":"9.9.9"}', encoding="utf-8")
+
+    assert viewer_version(app_dir) == "9.9.9"
 
 
 def test_ensure_viewer_dependencies_skips_existing_install(tmp_path, monkeypatch):
