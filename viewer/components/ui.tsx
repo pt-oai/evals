@@ -122,11 +122,13 @@ export function DataTable<T>({
   empty,
   getCellRowSpan,
   getRowClassName,
+  getRowHref,
 }: {
   table: Table<T>;
   empty: string;
   getCellRowSpan?: (cell: Cell<T, unknown>) => number;
   getRowClassName?: (row: Row<T>) => string;
+  getRowHref?: (row: Row<T>) => string | undefined;
 }) {
   return (
     <div className="overflow-hidden rounded-md border border-line bg-white shadow-soft">
@@ -162,24 +164,40 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={`border-b border-line last:border-b-0 ${getRowClassName?.(row) ?? ""}`}
-                >
-                  {row.getVisibleCells().map((cell) => {
-                    const rowSpan = getCellRowSpan?.(cell) ?? 1;
-                    if (rowSpan === 0) {
-                      return null;
+              table.getRowModel().rows.map((row) => {
+                const rowHref = getRowHref?.(row);
+                return (
+                  <tr
+                    key={row.id}
+                    className={`border-b border-line last:border-b-0 ${rowHref ? "cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-leaf" : ""} ${getRowClassName?.(row) ?? ""}`}
+                    role={rowHref ? "link" : undefined}
+                    tabIndex={rowHref ? 0 : undefined}
+                    onClick={rowHref ? () => window.location.assign(rowHref) : undefined}
+                    onKeyDown={
+                      rowHref
+                        ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              window.location.assign(rowHref);
+                            }
+                          }
+                        : undefined
                     }
-                    return (
-                      <td key={cell.id} rowSpan={rowSpan} className="overflow-hidden px-2 py-2 align-top text-slate-700">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
+                  >
+                    {row.getVisibleCells().map((cell) => {
+                      const rowSpan = getCellRowSpan?.(cell) ?? 1;
+                      if (rowSpan === 0) {
+                        return null;
+                      }
+                      return (
+                        <td key={cell.id} rowSpan={rowSpan} className="overflow-hidden px-2 py-2 align-top text-slate-700">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
             ) : (
               <tr>
                 <td colSpan={table.getAllLeafColumns().length} className="px-3 py-8 text-center text-sm text-slate-500">

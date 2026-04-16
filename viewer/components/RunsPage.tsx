@@ -173,9 +173,7 @@ export function RunsPage() {
         enableHiding: false,
         cell: ({ row }) => (
           <div className="min-w-48 leading-tight">
-            <Link href={`/runs/${encodeURIComponent(row.original.runKey)}`} className="font-semibold text-ink hover:text-leaf">
-              {row.original.experimentName}
-            </Link>
+            <div className="font-semibold text-ink">{row.original.experimentName}</div>
             <div className="mt-0.5 text-[11px] text-slate-500">{row.original.runKey}</div>
             <div className="mt-1 text-[11px] text-slate-500">{row.original.runItemsLabel}</div>
             <div className="mt-0.5 text-[11px] text-slate-500">{formatDate(row.original.startedAt)}</div>
@@ -476,6 +474,7 @@ export function RunsPage() {
           cell.column.id === "run" ? runCellRowSpan(cell.row, table.getRowModel().rows) : 1
         }
         getRowClassName={(row) => runTones[row.original.runGroupIndex % runTones.length]}
+        getRowHref={(row) => `/runs/${encodeURIComponent(row.original.runKey)}`}
       />
       {expandedChart ? (
         <ChartModal
