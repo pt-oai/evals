@@ -13,7 +13,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <header className="border-b border-line bg-white/90">
-          <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex w-full flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between">
             <Link href="/" className="text-2xl font-semibold text-ink">
               Eval Runs
             </Link>
@@ -33,7 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </nav>
           </div>
         </header>
-        <main className="mx-auto max-w-7xl px-5 py-6">{children}</main>
+        <main className="w-full px-5 py-6">{children}</main>
       </body>
     </html>
   );

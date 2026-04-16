@@ -308,20 +308,24 @@ export function RunsPage() {
         <div className="min-h-10 rounded-md border border-line bg-white px-3 py-2 text-sm text-slate-600 shadow-soft">
           {formatInt(filteredRows.length)} rows
         </div>
+        <ChartControls
+          chartDraftMetricId={chartDraftMetricId}
+          charts={charts}
+          metrics={chartMetrics}
+          setChartDraftMetricId={setChartDraftMetricId}
+          onAdd={() => {
+            if (!chartDraftMetricId || charts.some((chart) => chart.metricId === chartDraftMetricId)) {
+              return;
+            }
+            setChartsTouched(true);
+            setCharts((current) => [...current, { id: chartDraftMetricId, metricId: chartDraftMetricId }]);
+          }}
+        />
       </div>
       <RunCharts
-        chartDraftMetricId={chartDraftMetricId}
         charts={charts}
         metrics={chartMetrics}
         rows={filteredRows}
-        setChartDraftMetricId={setChartDraftMetricId}
-        onAdd={() => {
-          if (!chartDraftMetricId || charts.some((chart) => chart.metricId === chartDraftMetricId)) {
-            return;
-          }
-          setChartsTouched(true);
-          setCharts((current) => [...current, { id: chartDraftMetricId, metricId: chartDraftMetricId }]);
-        }}
         onOpen={setExpandedChartId}
         onRemove={(chartId) => {
           setChartsTouched(true);
@@ -347,57 +351,65 @@ export function RunsPage() {
   );
 }
 
-function RunCharts({
+function ChartControls({
   chartDraftMetricId,
   charts,
   metrics,
-  rows,
   setChartDraftMetricId,
   onAdd,
-  onOpen,
-  onRemove,
 }: {
   chartDraftMetricId: string;
   charts: ChartConfig[];
   metrics: ChartMetric[];
-  rows: ModelRunRow[];
   setChartDraftMetricId: Dispatch<SetStateAction<string>>;
   onAdd: () => void;
-  onOpen: (chartId: string) => void;
-  onRemove: (chartId: string) => void;
 }) {
   const canAdd = Boolean(chartDraftMetricId) && !charts.some((chart) => chart.metricId === chartDraftMetricId);
   return (
-    <section className="mb-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold text-ink">Charts</h2>
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-white p-2 shadow-soft">
-          <select
-            value={chartDraftMetricId}
-            onChange={(event) => setChartDraftMetricId(event.target.value)}
-            className="min-h-9 max-w-72 rounded-md border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-leaf"
-            aria-label="Metric"
-          >
-            {metricGroups(metrics).map((group) => (
-              <optgroup key={group.name} label={group.name}>
-                {group.metrics.map((metric) => (
-                  <option key={metric.id} value={metric.id}>
-                    {metric.label}
-                  </option>
-                ))}
-              </optgroup>
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-white p-2 shadow-soft">
+      <select
+        value={chartDraftMetricId}
+        onChange={(event) => setChartDraftMetricId(event.target.value)}
+        className="min-h-9 max-w-72 rounded-md border border-line bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-leaf"
+        aria-label="Metric"
+      >
+        {metricGroups(metrics).map((group) => (
+          <optgroup key={group.name} label={group.name}>
+            {group.metrics.map((metric) => (
+              <option key={metric.id} value={metric.id}>
+                {metric.label}
+              </option>
             ))}
-          </select>
-          <button
-            type="button"
-            disabled={!canAdd}
-            onClick={onAdd}
-            className="min-h-9 rounded-md bg-ink px-3 py-1.5 text-sm font-semibold text-white hover:bg-leaf disabled:cursor-not-allowed disabled:bg-slate-300"
-          >
-            {canAdd ? "Add chart" : "Added"}
-          </button>
-        </div>
-      </div>
+          </optgroup>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={!canAdd}
+        onClick={onAdd}
+        className="min-h-9 rounded-md bg-ink px-3 py-1.5 text-sm font-semibold text-white hover:bg-leaf disabled:cursor-not-allowed disabled:bg-slate-300"
+      >
+        Add Chart
+      </button>
+    </div>
+  );
+}
+
+function RunCharts({
+  charts,
+  metrics,
+  rows,
+  onOpen,
+  onRemove,
+}: {
+  charts: ChartConfig[];
+  metrics: ChartMetric[];
+  rows: ModelRunRow[];
+  onOpen: (chartId: string) => void;
+  onRemove: (chartId: string) => void;
+}) {
+  return (
+    <section className="mb-5">
       {charts.length ? (
         <div className="overflow-x-auto pb-2">
           <div className="flex min-w-max gap-3">
@@ -952,7 +964,7 @@ function buildChartGroups(rows: ModelRunRow[], metric: ChartMetric): ChartGroup[
     group.values.set(row.modelKey, metric.value(row));
     groups.set(row.runKey, group);
   }
-  return [...groups.values()];
+  return [...groups.values()].sort((left, right) => timestamp(left.startedAt) - timestamp(right.startedAt));
 }
 
 function buildChartData(groups: ChartGroup[], modelKeys: string[]): ChartDatum[] {
