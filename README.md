@@ -10,34 +10,97 @@ Experiments are plain Python files. Define the dataset, models, workflow, and ev
 python examples/qa_smoke.py
 ```
 
-Install locally:
+## Quick Start
+
+From the repo where you want to write and run evals:
 
 ```bash
-python -m pip install -e .
-```
-
-Install from GitHub:
-
-```bash
-python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.5.1"
-```
-
-After installing `pt-evals` into another repo, seed repo-root agent
-instructions from that repo root:
-
-```bash
-python -m evals init
-```
-
-You can also run the installed console script:
-
-```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "pt-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.5.6"
 pt-evals init
+```
+
+Set your OpenAI API key:
+
+```bash
+export OPENAI_API_KEY="..."
+```
+
+Create a tiny dataset:
+
+```bash
+mkdir -p datasets
+cat > datasets/qa.csv <<'CSV'
+id,question,expected
+item-1,What is 2 + 2?,4
+item-2,Name the color of a clear daytime sky.,blue
+CSV
+```
+
+Create an eval:
+
+```bash
+cat > qa_smoke.py <<'PY'
+from evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
+
+exp = Experiment(
+    name="qa_smoke",
+    dataset="datasets/qa.csv",
+    output_dir="runs",
+    concurrency=5,
+    resume=True,
+)
+
+exp.model(
+    ModelConfig(
+        key="gpt5_low",
+        model="gpt-5",
+        params={"reasoning": {"effort": "low"}},
+    )
+)
+
+async def answer(item, model, ctx):
+    response = await ctx.responses.create(
+        model=model.model,
+        **model.params,
+        input=item["question"],
+    )
+    return response.output_text
+
+exp.workflow = answer
+exp.eval(
+    "contains_expected",
+    Contains(container=text(), expected=item("expected"), case_sensitive=False),
+    description="Expected answer appears",
+)
+exp.eval("brevity", LengthBetween(value=text(), max_len=200))
+
+if __name__ == "__main__":
+    exp.run()
+PY
+```
+
+Run the eval and open the local viewer:
+
+```bash
+python qa_smoke.py
+pt-evals view runs/
 ```
 
 The init command creates `AGENTS.md` if it does not exist. If `AGENTS.md`
 already exists, it appends a marked `pt-evals` section unless that section is
 already present. Use `--force` to overwrite the file.
+
+For local development on this package checkout:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
 
 ## Terminology
 
