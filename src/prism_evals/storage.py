@@ -7,7 +7,7 @@ from typing import Any
 
 from prism_evals._utils import to_jsonable
 from prism_evals.artifacts import copy_artifacts as copy_user_artifacts
-from prism_evals.models import ItemRunRecord, RunManifest, StepRecord
+from prism_evals.models import ItemRunRecord, RunManifest, StepRecord, TaskOutput
 
 
 class Storage:
@@ -19,6 +19,7 @@ class Storage:
         self.scores_csv_path = run_dir / "scores.csv"
         self.steps_csv_path = run_dir / "steps.csv"
         self.artifacts_dir = run_dir / "artifacts"
+        self.media_dir = run_dir / "media"
 
     def prepare(self, manifest: RunManifest) -> None:
         self.run_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +72,8 @@ class Storage:
         }
         if self.artifacts_dir.exists():
             paths["artifacts"] = self.artifacts_dir
+        if self.media_dir.exists():
+            paths["media"] = self.media_dir
         return paths
 
     def _write_results_csv(self, records: list[ItemRunRecord]) -> None:
@@ -111,6 +114,9 @@ class Storage:
             "reasoning_tokens",
             "total_tokens",
             "output_text",
+            "media_count",
+            "media_paths_json",
+            "primary_media_path",
             "error_type",
             "error_message",
         ]
@@ -194,6 +200,9 @@ class Storage:
             "reasoning_tokens",
             "total_tokens",
             "output_text",
+            "media_count",
+            "media_paths_json",
+            "primary_media_path",
             "error_type",
             "error_message",
             "scores_json",
@@ -259,6 +268,7 @@ def step_row(record: ItemRunRecord, step: StepRecord) -> dict[str, Any]:
         "reasoning_tokens": step.usage.reasoning_tokens,
         "total_tokens": step.usage.total_tokens,
         "output_text": step.output.text if step.output else "",
+        **media_summary(step.output),
         "error_type": step.error.type if step.error else "",
         "error_message": step.error.message if step.error else "",
         "scores_json": json.dumps(to_jsonable(scores), sort_keys=True),
@@ -286,6 +296,17 @@ def flatten_item_run(record: ItemRunRecord) -> dict[str, Any]:
         "reasoning_tokens": record.usage.reasoning_tokens,
         "total_tokens": record.usage.total_tokens,
         "output_text": record.output.text if record.output else "",
+        **media_summary(record.output),
         "error_type": record.error.type if record.error else "",
         "error_message": record.error.message if record.error else "",
+    }
+
+
+def media_summary(output: TaskOutput | None) -> dict[str, Any]:
+    media = output.media if output else []
+    paths = [item.path for item in media]
+    return {
+        "media_count": len(media),
+        "media_paths_json": json.dumps(paths, sort_keys=True),
+        "primary_media_path": paths[0] if paths else "",
     }

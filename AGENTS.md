@@ -1,8 +1,8 @@
 # AGENTS.md
 
 This repo provides Prism Evals, a local Python framework for executable OpenAI
-Responses API experiments. The package distribution is `prism-evals`, and the
-Python import is `prism_evals`.
+API experiments. The package distribution is `prism-evals`, and the Python
+import is `prism_evals`.
 
 Use this file as the quick orientation for LLM agents working in this package
 repo, and as a template for consuming repos that install Prism Evals.
@@ -32,33 +32,36 @@ An experiment is a normal Python file that configures:
 - Item-level evals registered with `exp.eval(...)`.
 - Optional step-level evals inside `ctx.step(...)`.
 
-Run an experiment by executing the Python file directly:
+Run an experiment with the Prism CLI:
 
 ```bash
-python path/to/experiment.py
+prism run path/to/experiment.py
 ```
 
 The minimal shape is:
 
 ```python
-from prism_evals import Experiment, ModelConfig
+from openai import AsyncOpenAI
+
+from prism_evals import Experiment, ModelConfig, TaskOutput
 
 exp = Experiment(name="my_eval", dataset="datasets/my_eval.csv", output_dir="runs")
 exp.model(ModelConfig(key="gpt5_low", model="gpt-5", params={"reasoning": {"effort": "low"}}))
+client = AsyncOpenAI()
 
 async def workflow(item, model, ctx):
-    response = await ctx.responses.create(
+    response = await client.responses.create(
         model=model.model,
         **model.params,
         input=item["prompt"],
     )
-    return response.output_text
+    return TaskOutput(text=response.output_text)
 
 exp.workflow = workflow
-
-if __name__ == "__main__":
-    exp.run()
 ```
+
+Direct `python path/to/experiment.py` execution is still supported if the file
+includes an explicit `exp.run()` block.
 
 ## Where To Make Changes
 
@@ -130,9 +133,10 @@ Run directories contain:
 - `scores.csv`: one row per score, including both item-level and step-level
   scores.
 - `steps.csv`: one row per recorded workflow step, including step output text,
-  usage, errors, and step scores.
+  usage, errors, media columns, and step scores.
 - `artifacts/`: optional copied prompt/rubric/schema files listed in
   `artifacts=[...]`.
+- `media/`: generated outputs saved with `ctx.media`.
 
 `runs/` and `examples/runs/` are ignored by git in this repo. Treat run outputs
 as generated artifacts unless the consuming repo explicitly chooses to version
@@ -147,6 +151,8 @@ Use `results.csv` for quick spreadsheet-style inspection. Useful columns include
 
 - `item_id`, `item_index`, `model_key`, `repetition`, and `status`.
 - `output_text` for the final workflow output.
+- `media_count`, `media_paths_json`, and `primary_media_path` for generated
+  output files.
 - `score:<eval_key>` and `score_error:<eval_key>` for item-level evals.
 - `step:<step_key>.score:<eval_key>` for step evals flattened into the item row.
 - `input_tokens`, `output_tokens`, `reasoning_tokens`, `total_tokens`, and
@@ -161,13 +167,12 @@ steps. Filter by:
 - `score_key=<eval>` for a specific metric.
 
 Use `steps.csv` when debugging multi-step workflows. It shows each step's
-status, output text, token usage, latency, response ID, and `scores_json`.
+status, output text, media paths, token usage, latency, response ID, and
+`scores_json`.
 
 Use `results.jsonl` when full record structure matters. It preserves nested
-records for items, final outputs, evals, generations, raw requests/responses
-when `capture_raw=True`, steps, errors, and usage. Inline `data:` URLs in raw
-payloads are compacted by default with `redact_raw_data_urls=True`; set it to
-`False` only when byte-for-byte raw media payloads are required.
+records for items, final `TaskOutput` values, evals, optional legacy generation
+records, steps, errors, usage, and media metadata.
 
 ## Resume Behavior
 
@@ -196,20 +201,21 @@ Keep dataset columns explicit and stable. Evals often use selectors such as
 
 ## Workflows And Steps
 
-A workflow receives `(item, model, ctx)` and may be sync or async. It may return
-a plain string, a `dict`, or a `TaskOutput`.
+A workflow receives `(item, model, ctx)` and may be sync or async. It must
+return `TaskOutput`.
 
-Use `ctx.responses.create(...)` instead of constructing a separate OpenAI client.
-That wrapper records generations, usage, latency, response IDs, raw
-requests/responses when enabled, and retry behavior.
+Import and use the OpenAI SDK directly inside experiment files. Prism owns eval
+orchestration and output storage, not provider SDK calls.
 
 Use `ctx.step("step_key", callable_or_value, evals=[...])` for multi-step
-workflows. Step outputs and step evals are written to both `results.jsonl` and
-the flattened CSV files.
+workflows. Step callables must return `TaskOutput`. Step outputs and step evals
+are written to both `results.jsonl` and the flattened CSV files.
 
-Return `TaskOutput(text=..., value=...)` when the final output has both display
-text and structured data. Built-in selectors such as `text()`, `out("path")`,
-`step("step_key.path")`, and `step_text("step_key")` depend on that structure.
+Return `TaskOutput(text=..., value=..., media=[...])` for display text,
+structured data, and generated media. Built-in selectors such as `text()`,
+`out("path")`, `step("step_key.path")`, and `step_text("step_key")` depend on
+that structure. Use `ctx.media.from_base64(...)`, `ctx.media.from_bytes(...)`,
+or `ctx.media.from_path(...)` to save generated images into `media/`.
 
 ## Viewer UI Preferences
 

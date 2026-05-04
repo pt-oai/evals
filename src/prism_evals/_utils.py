@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,10 +68,16 @@ def redact_data_urls(value: Any) -> Any:
     if isinstance(value, str):
         return _redact_data_url(value)
     if isinstance(value, dict):
-        return {key: redact_data_urls(item) for key, item in value.items()}
+        return {key: redact_media_value(str(key), item) for key, item in value.items()}
     if isinstance(value, list):
         return [redact_data_urls(item) for item in value]
     return value
+
+
+def redact_media_value(key: str, value: Any) -> Any:
+    if isinstance(value, str) and key in {"b64_json", "result", "partial_image_b64"}:
+        return _redact_base64_media(value)
+    return redact_data_urls(value)
 
 
 def raw_payload(value: Any, *, redact_raw_data_urls: bool = True) -> Any:
@@ -95,3 +102,11 @@ def _redact_data_url(value: str) -> str:
     if ";base64" in header:
         metadata.append(f"base64_chars={len(data)}")
     return f"{header},<{' '.join(metadata)}>"
+
+
+def _redact_base64_media(value: str) -> str:
+    if len(value) < 128 or not re.fullmatch(r"[A-Za-z0-9+/=\s]+", value):
+        return value
+    compact = "".join(value.split())
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"<redacted base64 media sha256={digest} chars={len(value)} base64_chars={len(compact)}>"

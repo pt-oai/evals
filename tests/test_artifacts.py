@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from prism_evals import Experiment, ModelConfig
+from prism_evals import Experiment, ModelConfig, TaskOutput
 from prism_evals.storage import Storage
 
 
@@ -25,7 +25,7 @@ def make_experiment(tmp_path, fake_client, artifacts):
         display="quiet",
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
-    exp.workflow = lambda item, model, ctx: "ok"
+    exp.workflow = lambda item, model, ctx: TaskOutput(text="ok")
     return exp
 
 

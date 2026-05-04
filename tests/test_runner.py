@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import base64
 import csv
+import json
 
 import pytest
 
-from prism_evals import EvalResult, Experiment, ModelConfig
+from prism_evals import EvalResult, Experiment, ModelConfig, TaskOutput
 from prism_evals.runner import item_run_id, load_dataset
 
 
@@ -43,7 +45,7 @@ def make_experiment(tmp_path, fake_client, rows=None, **kwargs):
             **model.params,
             input=item["question"],
         )
-        return response.output_text
+        return TaskOutput(text=response.output_text)
 
     def contains_expected(item, model, output, ctx):
         return item["expected"] in output.text
@@ -137,7 +139,7 @@ def test_eval_dict_return_is_supported(tmp_path, fake_client):
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
     async def workflow(item, model, ctx):
-        return "alpha"
+        return TaskOutput(text="alpha")
 
     def bundle(item, model, output, ctx):
         return {"correct": True, "score": 0.5}
@@ -163,7 +165,7 @@ def test_eval_errors_are_recorded(tmp_path, fake_client):
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
     async def workflow(item, model, ctx):
-        return "alpha"
+        return TaskOutput(text="alpha")
 
     def broken(item, model, output, ctx):
         raise RuntimeError("nope")
@@ -189,7 +191,7 @@ def test_sync_workflow_callable_is_supported(tmp_path, fake_client):
         display="quiet",
     )
     exp.model(ModelConfig(key="m1", model="gpt-test"))
-    exp.workflow = lambda item, model, ctx: "alpha"
+    exp.workflow = lambda item, model, ctx: TaskOutput(text="alpha")
     exp.eval("correct", lambda item, model, output, ctx: output.text == item["expected"])
 
     records = exp.run()
@@ -200,7 +202,7 @@ def test_sync_workflow_callable_is_supported(tmp_path, fake_client):
 def test_workflow_object_is_supported(tmp_path, fake_client):
     class Workflow:
         async def __call__(self, item, model, ctx):
-            return "alpha"
+            return TaskOutput(text="alpha")
 
     exp = Experiment(
         name="workflow_object",
@@ -221,6 +223,92 @@ def test_workflow_object_is_supported(tmp_path, fake_client):
     assert records[0].evals[0].score is True
 
 
+def test_workflow_must_return_task_output(tmp_path, fake_client):
+    exp = Experiment(
+        name="strict_workflow",
+        dataset=write_dataset(
+            tmp_path,
+            [{"id": "a", "question": "alpha", "expected": "alpha"}],
+        ),
+        output_dir=tmp_path / "runs",
+        openai_client=fake_client,
+        display="quiet",
+    )
+    exp.model(ModelConfig(key="m1", model="gpt-test"))
+    exp.workflow = lambda item, model, ctx: "alpha"
+
+    records = exp.run()
+
+    assert records[0].status == "failed"
+    assert "must return prism_evals.TaskOutput" in records[0].error.message
+    assert "TaskOutput(text=...)" in records[0].error.message
+
+
+def test_step_must_return_task_output(tmp_path, fake_client):
+    exp = Experiment(
+        name="strict_step",
+        dataset=write_dataset(
+            tmp_path,
+            [{"id": "a", "question": "alpha", "expected": "alpha"}],
+        ),
+        output_dir=tmp_path / "runs",
+        openai_client=fake_client,
+        display="quiet",
+    )
+    exp.model(ModelConfig(key="m1", model="gpt-test"))
+
+    async def workflow(item, model, ctx):
+        return await ctx.step("draft", "alpha")
+
+    exp.workflow = workflow
+    records = exp.run()
+
+    assert records[0].status == "failed"
+    assert records[0].steps[0].status == "failed"
+    assert "step 'draft' must return prism_evals.TaskOutput" in records[0].steps[0].error.message
+
+
+def test_task_output_media_is_persisted_to_jsonl_and_csv(tmp_path, fake_client):
+    exp = Experiment(
+        name="media",
+        dataset=write_dataset(
+            tmp_path,
+            [{"id": "a", "question": "alpha", "expected": "alpha"}],
+        ),
+        output_dir=tmp_path / "runs",
+        openai_client=fake_client,
+        display="quiet",
+    )
+    exp.model(ModelConfig(key="m1", model="gpt-test"))
+
+    async def workflow(item, model, ctx):
+        image = ctx.media.from_base64(
+            base64.b64encode(b"image bytes").decode("ascii"),
+            format="png",
+            name="sample",
+            metadata={"alt": "Sample"},
+        )
+        return TaskOutput(text="generated", media=[image])
+
+    exp.workflow = workflow
+    records = exp.run()
+    record = records[0]
+
+    assert record.status == "success"
+    assert record.output.media[0].path.startswith("media/")
+    assert record.output.media[0].metadata == {"alt": "Sample"}
+    assert (exp.run_dir() / record.output.media[0].path).read_bytes() == b"image bytes"
+
+    jsonl_record = json.loads((exp.run_dir() / "results.jsonl").read_text(encoding="utf-8").strip())
+    assert jsonl_record["output"]["media"][0]["path"] == record.output.media[0].path
+
+    with (exp.run_dir() / "results.csv").open("r", encoding="utf-8") as handle:
+        row = list(csv.DictReader(handle))[0]
+    assert row["media_count"] == "1"
+    assert json.loads(row["media_paths_json"]) == [record.output.media[0].path]
+    assert row["primary_media_path"] == record.output.media[0].path
+
+
 def test_item_run_records_multiple_steps_and_step_evals(tmp_path, fake_client):
     exp = Experiment(
         name="steps",
@@ -237,7 +325,7 @@ def test_item_run_records_multiple_steps_and_step_evals(tmp_path, fake_client):
     async def workflow(item, model, ctx):
         async def make_draft():
             response = await ctx.responses.create(model=model.model, input=item["question"])
-            return response.output_text
+            return TaskOutput(text=response.output_text)
 
         draft = await ctx.step(
             "draft",
@@ -246,7 +334,7 @@ def test_item_run_records_multiple_steps_and_step_evals(tmp_path, fake_client):
         )
         final = await ctx.step(
             "final",
-            lambda: {"text": draft.text, "value": {"answer": draft.text}},
+            lambda: TaskOutput(text=draft.text, value={"answer": draft.text}),
             evals=[("final_matches", lambda item, model, output, ctx: output.text == item["expected"])],
         )
         return final
@@ -299,8 +387,8 @@ def test_duplicate_step_key_fails_item_run(tmp_path, fake_client):
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
     async def workflow(item, model, ctx):
-        await ctx.step("same", "first")
-        await ctx.step("same", "second")
+        await ctx.step("same", TaskOutput(text="first"))
+        await ctx.step("same", TaskOutput(text="second"))
 
     exp.workflow = workflow
     records = exp.run()
@@ -349,7 +437,7 @@ def test_step_eval_failure_is_recorded_without_failing_item_run(tmp_path, fake_c
         raise RuntimeError("eval boom")
 
     async def workflow(item, model, ctx):
-        return await ctx.step("checked", "alpha", evals=[("broken", broken)])
+        return await ctx.step("checked", TaskOutput(text="alpha"), evals=[("broken", broken)])
 
     exp.workflow = workflow
     records = exp.run()
@@ -376,7 +464,7 @@ def test_step_eval_failure_fails_item_run_when_fail_fast(tmp_path, fake_client):
         raise RuntimeError("eval boom")
 
     async def workflow(item, model, ctx):
-        return await ctx.step("checked", "alpha", evals=[("broken", broken)])
+        return await ctx.step("checked", TaskOutput(text="alpha"), evals=[("broken", broken)])
 
     exp.workflow = workflow
     with pytest.raises(RuntimeError, match="step eval failed"):

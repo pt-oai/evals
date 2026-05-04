@@ -26,7 +26,16 @@ import {
   writeRunDetailPreferences,
   type SavedReference,
 } from "../lib/preferences";
-import type { EvalResult, ItemRunRecord, ModelRunSummary, RunDetail, ScoreMetric, StepRecord } from "../lib/types";
+import type {
+  EvalResult,
+  ItemRunRecord,
+  MediaArtifact,
+  ModelRunSummary,
+  RunDetail,
+  ScoreMetric,
+  StepRecord,
+  TaskOutput,
+} from "../lib/types";
 import { formatDate, formatInt, formatScore, formatSeconds } from "./format";
 import {
   DataTable,
@@ -429,7 +438,16 @@ export function RunDetailPage({ runKey }: { runKey: string }) {
         }
         getRowClassName={(row) => itemTones[row.original.itemGroupIndex % itemTones.length]}
       />
-      {selected ? <RecordDrawer record={selected} metrics={detail.metrics} tab={tab} setTab={setTab} onClose={() => setSelected(null)} /> : null}
+      {selected ? (
+        <RecordDrawer
+          record={selected}
+          metrics={detail.metrics}
+          runKey={runKey}
+          tab={tab}
+          setTab={setTab}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -691,12 +709,14 @@ function MetricTable({ title, children }: { title: string; children: ReactNode }
 function RecordDrawer({
   record,
   metrics,
+  runKey,
   tab,
   setTab,
   onClose,
 }: {
   record: ItemRunRecord;
   metrics: ScoreMetric[];
+  runKey: string;
   tab: DetailTab;
   setTab: (tab: DetailTab) => void;
   onClose: () => void;
@@ -746,9 +766,9 @@ function RecordDrawer({
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
-          {tab === "output" ? <TextPanel text={record.output?.text ?? ""} /> : null}
+          {tab === "output" ? <OutputPanel output={record.output ?? null} runKey={runKey} /> : null}
           {tab === "scores" ? <ScoresPanel record={record} metrics={metrics} /> : null}
-          {tab === "steps" ? <StepsPanel steps={record.steps ?? []} /> : null}
+          {tab === "steps" ? <StepsPanel steps={record.steps ?? []} runKey={runKey} /> : null}
           {tab === "dataset" ? <JsonBlock value={record.item} /> : null}
           {tab === "calls" ? <JsonBlock value={record.generations ?? []} /> : null}
           {tab === "data" ? <JsonBlock value={record} /> : null}
@@ -759,12 +779,43 @@ function RecordDrawer({
   );
 }
 
-function TextPanel({ text }: { text: string }) {
+function OutputPanel({ output, runKey }: { output: TaskOutput | null; runKey: string }) {
+  if (!output) {
+    return <EmptyState title="No output" body="This item has no recorded output." />;
+  }
   return (
-    <div className="rounded-md border border-line bg-mist p-4">
-      <FormattedOutput text={text} />
+    <div className="space-y-3">
+      <div className="rounded-md border border-line bg-mist p-4">
+        <FormattedOutput text={output.text ?? ""} />
+      </div>
+      {output.media?.length ? <MediaGrid media={output.media} runKey={runKey} /> : null}
+      {output.value !== undefined && output.value !== null ? <JsonBlock value={output.value} /> : null}
     </div>
   );
+}
+
+function MediaGrid({ media, runKey }: { media: MediaArtifact[]; runKey: string }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {media.map((item) => (
+        <figure key={item.path} className="rounded-md border border-line bg-white p-2">
+          <img
+            src={mediaHref(runKey, item.path)}
+            alt={item.metadata?.alt && typeof item.metadata.alt === "string" ? item.metadata.alt : "Generated output"}
+            className="max-h-96 w-full rounded object-contain"
+          />
+          <figcaption className="mt-2 truncate text-xs text-slate-500">{item.path}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
+function mediaHref(runKey: string, mediaPath: string): string {
+  return `/media/${encodeURIComponent(runKey)}/${mediaPath
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/")}`;
 }
 
 function OutputCell({ text, onOpen }: { text: string; onOpen: () => void }) {
@@ -984,7 +1035,7 @@ function ScoresPanel({ record, metrics }: { record: ItemRunRecord; metrics: Scor
   );
 }
 
-function StepsPanel({ steps }: { steps: StepRecord[] }) {
+function StepsPanel({ steps, runKey }: { steps: StepRecord[]; runKey: string }) {
   if (!steps.length) {
     return <EmptyState title="No steps" body="This item has no recorded steps." />;
   }
@@ -998,9 +1049,7 @@ function StepsPanel({ steps }: { steps: StepRecord[] }) {
               {step.status} - {formatSeconds(step.duration_s)}
             </div>
           </div>
-          <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-mist p-3 text-sm text-ink">
-            {step.output?.text || "No output recorded."}
-          </pre>
+          <OutputPanel output={step.output ?? null} runKey={runKey} />
         </div>
       ))}
     </div>

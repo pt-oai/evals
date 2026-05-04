@@ -1,10 +1,10 @@
-import { mkdtemp, mkdir, writeFile } from "fs/promises";
+import { mkdtemp, mkdir, realpath, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { aggregateScores, buildCompareResult, buildLanes, buildRunSummary } from "../lib/evals";
-import { loadCompare, loadRunSummaries } from "../lib/server/runs";
+import { loadCompare, loadRunSummaries, resolveMedia } from "../lib/server/runs";
 import type { ItemRunRecord, RunManifest, TokenUsage } from "../lib/types";
 
 const usage: TokenUsage = {
@@ -124,6 +124,34 @@ describe("server artifact loading", () => {
     });
 
     expect(comparison.rows[0].scoreDeltas[0].delta).toBe(-1);
+  });
+
+  it("resolves generated media within a run", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "prism-evals-viewer-"));
+    await writeRun(root, "run-a", manifest("run-a", ["m1"]), [
+      {
+        ...record("item-1", "m1", { exact: true }),
+        output: {
+          text: "Image",
+          media: [
+            {
+              path: "media/item-1.png",
+              mime_type: "image/png",
+              format: "png",
+              sha256: "abc",
+              bytes: 3,
+            },
+          ],
+        },
+      },
+    ]);
+    await mkdir(path.join(root, "run-a", "media"));
+    await writeFile(path.join(root, "run-a", "media", "item-1.png"), "png");
+    vi.stubEnv("PRISM_RUNS_DIR", root);
+
+    const expected = await realpath(path.join(root, "run-a", "media", "item-1.png"));
+    await expect(resolveMedia("run-a", "media/item-1.png")).resolves.toBe(expected);
+    await expect(resolveMedia("run-a", "results.jsonl")).rejects.toThrow("Media file was not found");
   });
 });
 

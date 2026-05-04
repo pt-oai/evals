@@ -1,4 +1,6 @@
-from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
+from openai import AsyncOpenAI
+
+from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, TaskOutput, item, text
 
 
 exp = Experiment(
@@ -18,14 +20,16 @@ exp.model(
     )
 )
 
+client = AsyncOpenAI()
+
 
 async def answer(item, model, ctx):
-    response = await ctx.responses.create(
+    response = await client.responses.create(
         model=model.model,
         **model.params,
         input=item["question"],
     )
-    return response.output_text
+    return TaskOutput(text=response.output_text)
 
 
 exp.workflow = answer
@@ -35,7 +39,3 @@ exp.eval(
     description="Expected answer appears",
 )
 exp.eval("brevity", LengthBetween(value=text(), max_len=200))
-
-
-if __name__ == "__main__":
-    exp.run()

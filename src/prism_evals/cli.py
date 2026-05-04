@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -11,7 +12,9 @@ import webbrowser
 from collections.abc import Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from types import ModuleType
 
+from prism_evals.experiment import Experiment
 from prism_evals.scaffold import install_agents_md
 
 DEFAULT_RELEASE_REPOSITORIES = (
@@ -233,6 +236,60 @@ def run_viewer(
         return 130
 
 
+def load_experiment_module(path: str | Path) -> ModuleType:
+    experiment_file = Path(path).expanduser().resolve()
+    if not experiment_file.exists():
+        raise FileNotFoundError(f"experiment file does not exist: {experiment_file}")
+    if not experiment_file.is_file():
+        raise IsADirectoryError(f"experiment path is not a file: {experiment_file}")
+
+    safe_stem = "".join(char if char.isalnum() else "_" for char in experiment_file.stem)
+    module_name = f"_prism_eval_{safe_stem}_{abs(hash(str(experiment_file)))}"
+    spec = importlib.util.spec_from_file_location(module_name, experiment_file)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load experiment file: {experiment_file}")
+
+    module = importlib.util.module_from_spec(spec)
+    parent = str(experiment_file.parent)
+    sys.path.insert(0, parent)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if sys.path and sys.path[0] == parent:
+            sys.path.pop(0)
+        else:
+            try:
+                sys.path.remove(parent)
+            except ValueError:
+                pass
+        sys.modules.pop(module_name, None)
+    return module
+
+
+def discover_experiments(module: ModuleType) -> list[Experiment]:
+    experiments: list[Experiment] = []
+    seen: set[int] = set()
+    for value in module.__dict__.values():
+        if isinstance(value, Experiment) and id(value) not in seen:
+            experiments.append(value)
+            seen.add(id(value))
+    return experiments
+
+
+def run_experiment_file(path: str | Path) -> int:
+    module = load_experiment_module(path)
+    experiments = discover_experiments(module)
+    if not experiments:
+        raise ValueError(
+            "no module-level Experiment instances found; assign an Experiment(...) "
+            "to a top-level variable in the file"
+        )
+    for exp in experiments:
+        exp.run()
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="prism")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -282,6 +339,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Start the viewer without opening a browser.",
     )
 
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Discover and run module-level Prism Evals experiments from a Python file.",
+    )
+    run_parser.add_argument(
+        "experiment_file",
+        help="Python file containing one or more module-level Experiment instances.",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "init":
@@ -311,6 +377,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except Exception as exc:
             print(f"prism view failed: {exc}", file=sys.stderr)
+            return 1
+
+    if args.command == "run":
+        try:
+            return run_experiment_file(args.experiment_file)
+        except Exception as exc:
+            print(f"prism run failed: {exc}", file=sys.stderr)
             return 1
 
     parser.error(f"unknown command: {args.command}")

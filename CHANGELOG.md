@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.7.0] - 2026-05-04
+
+### Changed
+
+- `TaskOutput` is now the required workflow and step output contract.
+- Workflows should import provider SDKs directly instead of relying on Prism to
+  proxy OpenAI calls.
+
+### Added
+
+- Added `TaskOutput.media`, `MediaArtifact`, run-local `media/` storage,
+  compact media columns in CSV outputs, and viewer media previews.
+- Added `ctx.media.from_base64(...)`, `ctx.media.from_bytes(...)`, and
+  `ctx.media.from_path(...)` helpers for generated outputs.
+
+## [0.6.8] - 2026-04-16
+
+### Added
+
+- `prism run <experiment_file>` discovers and runs module-level `Experiment`
+  instances, so eval files no longer need an explicit `exp.run()` block.
+
 ## [0.6.7] - 2026-04-16
 
 ### Added

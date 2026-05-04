@@ -19,6 +19,16 @@ export interface ErrorRecord {
 export interface TaskOutput {
   text: string;
   value?: unknown;
+  media?: MediaArtifact[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface MediaArtifact {
+  path: string;
+  mime_type: string;
+  format: string;
+  sha256: string;
+  bytes: number;
   metadata?: Record<string, unknown>;
 }
 

@@ -169,7 +169,7 @@ def test_registered_key_overrides_single_eval_result_key(tmp_path, fake_client):
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
     async def workflow(dataset_item, model, ctx):
-        return "ok"
+        return TaskOutput(text="ok")
 
     exp.workflow = workflow
     exp.eval("registered", lambda dataset_item, model, output, ctx: EvalResult(key="other", score=True))
@@ -189,7 +189,7 @@ def test_dict_and_list_eval_returns_keep_multi_score_behavior(tmp_path, fake_cli
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
     async def workflow(dataset_item, model, ctx):
-        return "ok"
+        return TaskOutput(text="ok")
 
     exp.workflow = workflow
     exp.eval("dict_bundle", lambda dataset_item, model, output, ctx: {"a": True, "b": 0.5})

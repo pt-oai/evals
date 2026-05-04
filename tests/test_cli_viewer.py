@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 
 from prism_evals.cli import (
+    discover_experiments,
     ensure_viewer_dependencies,
     latest_viewer_tag,
+    load_experiment_module,
     newest_version_tag,
     main,
     validate_runs_parent,
@@ -17,6 +19,7 @@ from prism_evals.cli import (
     viewer_dir,
     viewer_version,
 )
+from prism_evals.experiment import Experiment
 
 
 def test_validate_runs_parent_rejects_missing_directory(tmp_path):
@@ -61,6 +64,169 @@ def test_project_scripts_expose_prism_aliases():
         "prism-evals": "prism_evals.cli:main",
         "pe": "prism_evals.cli:main",
     }
+
+
+def test_cli_run_discovers_and_runs_experiment_file(tmp_path):
+    dataset = tmp_path / "data.csv"
+    dataset.write_text("id,question\n1,hello\n", encoding="utf-8")
+    runs_dir = tmp_path / "runs"
+    experiment_file = tmp_path / "eval.py"
+    experiment_file.write_text(
+        f"""
+from prism_evals import Experiment, ModelConfig, TaskOutput
+
+exp = Experiment(
+    name="cli_demo",
+    dataset={str(dataset)!r},
+    output_dir={str(runs_dir)!r},
+    openai_client=object(),
+    display="quiet",
+    timestamp_output_dir=False,
+)
+exp.model(ModelConfig(key="m1", model="gpt-test"))
+
+def workflow(item, model, ctx):
+    return TaskOutput(text=item["question"])
+
+exp.workflow = workflow
+""",
+        encoding="utf-8",
+    )
+
+    result = main(["run", str(experiment_file)])
+
+    assert result == 0
+    assert (runs_dir / "cli_demo" / "manifest.json").exists()
+    assert (runs_dir / "cli_demo" / "results.csv").exists()
+
+
+def test_cli_run_runs_multiple_experiments_in_declaration_order(tmp_path, monkeypatch):
+    experiment_file = tmp_path / "evals.py"
+    experiment_file.write_text(
+        """
+from prism_evals import Experiment
+
+first = Experiment(name="first", dataset="missing.csv")
+second = Experiment(name="second", dataset="missing.csv")
+""",
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(Experiment, "run", lambda self: calls.append(self.name))
+
+    result = main(["run", str(experiment_file)])
+
+    assert result == 0
+    assert calls == ["first", "second"]
+
+
+def test_cli_run_deduplicates_experiment_aliases_and_skips_main_block(tmp_path, monkeypatch):
+    experiment_file = tmp_path / "eval.py"
+    experiment_file.write_text(
+        """
+from prism_evals import Experiment
+
+exp = Experiment(name="once", dataset="missing.csv")
+alias = exp
+
+if __name__ == "__main__":
+    raise RuntimeError("main block fired")
+""",
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(Experiment, "run", lambda self: calls.append(self.name))
+
+    result = main(["run", str(experiment_file)])
+
+    assert result == 0
+    assert calls == ["once"]
+
+
+def test_cli_run_temporarily_adds_experiment_parent_to_sys_path(tmp_path, monkeypatch):
+    (tmp_path / "helper.py").write_text('NAME = "from_helper"\n', encoding="utf-8")
+    experiment_file = tmp_path / "eval.py"
+    experiment_file.write_text(
+        """
+from helper import NAME
+from prism_evals import Experiment
+
+exp = Experiment(name=NAME, dataset="missing.csv")
+""",
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(Experiment, "run", lambda self: calls.append(self.name))
+
+    result = main(["run", str(experiment_file)])
+
+    assert result == 0
+    assert calls == ["from_helper"]
+
+
+def test_cli_run_reports_missing_file(capsys):
+    result = main(["run", "/tmp/prism-evals-missing-file.py"])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert "prism run failed" in captured.err
+    assert "experiment file does not exist" in captured.err
+
+
+def test_cli_run_reports_no_discovered_experiments(tmp_path, capsys):
+    experiment_file = tmp_path / "empty.py"
+    experiment_file.write_text("VALUE = 1\n", encoding="utf-8")
+
+    result = main(["run", str(experiment_file)])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert "prism run failed" in captured.err
+    assert "no module-level Experiment instances found" in captured.err
+
+
+def test_cli_run_reports_invalid_experiment_configuration(tmp_path, capsys):
+    dataset = tmp_path / "data.csv"
+    dataset.write_text("id,question\n1,hello\n", encoding="utf-8")
+    experiment_file = tmp_path / "invalid.py"
+    experiment_file.write_text(
+        f"""
+from prism_evals import Experiment
+
+exp = Experiment(
+    name="invalid",
+    dataset={str(dataset)!r},
+    output_dir={str(tmp_path / "runs")!r},
+    display="quiet",
+)
+""",
+        encoding="utf-8",
+    )
+
+    result = main(["run", str(experiment_file)])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert "prism run failed" in captured.err
+    assert "at least one model" in captured.err
+
+
+def test_discover_experiments_preserves_module_order_and_identity(tmp_path):
+    experiment_file = tmp_path / "eval.py"
+    experiment_file.write_text(
+        """
+from prism_evals import Experiment
+
+first = Experiment(name="first", dataset="missing.csv")
+second = Experiment(name="second", dataset="missing.csv")
+again = first
+""",
+        encoding="utf-8",
+    )
+
+    module = load_experiment_module(experiment_file)
+
+    assert [exp.name for exp in discover_experiments(module)] == ["first", "second"]
 
 
 def test_viewer_dir_uses_env_override(tmp_path, monkeypatch):

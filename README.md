@@ -1,14 +1,14 @@
 # Prism Evals
 
-Prism Evals is a local Python framework for executable OpenAI Responses API experiments.
+Prism Evals is a local Python framework for executable OpenAI API experiments.
 
 The package distribution is `prism-evals`, the Python import is `prism_evals`,
 and the primary CLI is `prism`. The short CLI alias is `pe`.
 
-Experiments are plain Python files. Define the dataset, models, workflow, and evals in one place, then run the file:
+Experiments are plain Python files. Define the dataset, models, workflow, and evals in one place, then run them with the CLI:
 
 ```bash
-python examples/qa_smoke.py
+prism run examples/qa_smoke.py
 ```
 
 ## Quick Start
@@ -19,7 +19,7 @@ From the repo where you want to write and run evals:
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "prism-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.6.0"
+python -m pip install "prism-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.7.0"
 prism init
 # or: prism-evals init
 # or: pe init
@@ -46,7 +46,9 @@ Create an eval:
 
 ```bash
 cat > qa_smoke.py <<'PY'
-from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
+from openai import AsyncOpenAI
+
+from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, TaskOutput, item, text
 
 exp = Experiment(
     name="qa_smoke",
@@ -64,13 +66,15 @@ exp.model(
     )
 )
 
+client = AsyncOpenAI()
+
 async def answer(item, model, ctx):
-    response = await ctx.responses.create(
+    response = await client.responses.create(
         model=model.model,
         **model.params,
         input=item["question"],
     )
-    return response.output_text
+    return TaskOutput(text=response.output_text)
 
 exp.workflow = answer
 exp.eval(
@@ -79,16 +83,13 @@ exp.eval(
     description="Expected answer appears",
 )
 exp.eval("brevity", LengthBetween(value=text(), max_len=200))
-
-if __name__ == "__main__":
-    exp.run()
 PY
 ```
 
 Run the eval and open the local viewer:
 
 ```bash
-python qa_smoke.py
+prism run qa_smoke.py
 prism view runs/
 ```
 
@@ -111,9 +112,9 @@ python -m pip install -e ".[dev]"
 - **Experiment run**: one call to `exp.run()`, with one `run_id` and one output directory.
 - **Item**: one dataset record. For CSV, this is one row.
 - **Item run**: one `item x model x repetition` attempt.
-- **Workflow**: the user-defined callable assigned to `exp.workflow`.
-- **Step**: a named unit inside a workflow, with its own output, evals, generations, latency, and usage.
-- **Generation**: one captured Responses API call.
+- **Workflow**: the user-defined callable assigned to `exp.workflow`. It must return `TaskOutput`.
+- **Step**: a named unit inside a workflow. Step callables must return `TaskOutput`.
+- **Media**: generated output files saved through `ctx.media` and referenced from `TaskOutput.media`.
 - **Eval**: one named score attached to either a step or the final item-run output.
 
 ## Basic QA Eval
@@ -129,7 +130,9 @@ item-2,Name the color of a clear daytime sky.,blue
 Create an experiment file:
 
 ```python
-from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, item, text
+from openai import AsyncOpenAI
+
+from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, TaskOutput, item, text
 
 exp = Experiment(
     name="qa_smoke",
@@ -147,13 +150,15 @@ exp.model(
     )
 )
 
+client = AsyncOpenAI()
+
 async def answer(item, model, ctx):
-    response = await ctx.responses.create(
+    response = await client.responses.create(
         model=model.model,
         **model.params,
         input=item["question"],
     )
-    return response.output_text
+    return TaskOutput(text=response.output_text)
 
 exp.workflow = answer
 exp.eval(
@@ -162,29 +167,32 @@ exp.eval(
     description="Expected answer appears",
 )
 exp.eval("brevity", LengthBetween(value=text(), max_len=200))
-
-if __name__ == "__main__":
-    exp.run()
 ```
+
+Run the experiment with `prism run qa_smoke.py`. Direct `python qa_smoke.py`
+execution is still supported if the file includes an explicit `exp.run()` block.
 
 ## Multi-Step Workflow
 
-Use `ctx.step(...)` when one dataset item needs a chain of work. Step evals always receive that step's output.
+Use `ctx.step(...)` when one dataset item needs a chain of work. Step callables must return `TaskOutput`, and step evals always receive that step's output.
 
 ```python
-from prism_evals import ApproxEqual, Contains, Experiment, JsonPathExists, ModelConfig, NonEmpty, item, out, text
+from openai import AsyncOpenAI
+
+from prism_evals import ApproxEqual, Contains, Experiment, JsonPathExists, ModelConfig, NonEmpty, TaskOutput, item, out, text
 
 exp = Experiment(name="score_chain", dataset="datasets/scoring.csv", output_dir="runs")
 exp.model(ModelConfig(key="gpt5_low", model="gpt-5", params={"reasoning": {"effort": "low"}}))
+client = AsyncOpenAI()
 
 async def workflow(item, model, ctx):
     async def make_draft():
-        response = await ctx.responses.create(
+        response = await client.responses.create(
             model=model.model,
             **model.params,
             input=item["prompt"],
         )
-        return response.output_text
+        return TaskOutput(text=response.output_text)
 
     draft = await ctx.step(
         "draft",
@@ -197,7 +205,7 @@ async def workflow(item, model, ctx):
 
     extracted = await ctx.step(
         "extract_score",
-        lambda: extract_score(draft.text),
+        lambda: TaskOutput(value=extract_score(draft.text)),
         evals=[
             ("score_exists", JsonPathExists(value=out(), path="score")),
             ("score_close", ApproxEqual(actual=out("score"), expected=item("score", cast=float), abs_tol=0.01)),
@@ -206,7 +214,7 @@ async def workflow(item, model, ctx):
 
     final = await ctx.step(
         "final",
-        lambda: build_final_answer(draft, extracted),
+        lambda: TaskOutput(text=build_final_answer(draft, extracted)),
         evals=[("final_non_empty", NonEmpty(text()))],
     )
 
@@ -217,18 +225,21 @@ exp.workflow = workflow
 
 ## Structured Output
 
-Responses API structured output works through the wrapped `ctx.responses.create(...)` call. Return `TaskOutput` when you want to keep both text and parsed data.
+Use the OpenAI SDK directly and return `TaskOutput` with both display text and parsed data.
 
 ```python
 import json
+
+from openai import AsyncOpenAI
 
 from prism_evals import Experiment, JsonPathExists, ModelConfig, TaskOutput, out
 
 exp = Experiment(name="extract_people", dataset="datasets/people.csv", output_dir="runs")
 exp.model(ModelConfig(key="gpt5_low", model="gpt-5", params={"reasoning": {"effort": "low"}}))
+client = AsyncOpenAI()
 
 async def extract(item, model, ctx):
-    response = await ctx.responses.create(
+    response = await client.responses.create(
         model=model.model,
         **model.params,
         input=item["text"],
@@ -253,10 +264,35 @@ async def extract(item, model, ctx):
 
 exp.workflow = extract
 exp.eval("has_name", JsonPathExists(value=out(), path="name"))
-
-if __name__ == "__main__":
-    exp.run()
 ```
+
+## Image Generation
+
+Prism does not proxy image generation calls. Import the OpenAI SDK, call either the Responses API or Image API, save generated bytes through `ctx.media`, and return the media in `TaskOutput`.
+
+```python
+from openai import AsyncOpenAI
+
+from prism_evals import Experiment, ModelConfig, TaskOutput
+
+exp = Experiment(name="image_api", dataset="datasets/prompts.csv", output_dir="runs")
+exp.model(ModelConfig(key="image_high", model="gpt-image-2", params={"quality": "high"}))
+client = AsyncOpenAI()
+
+async def workflow(item, model, ctx):
+    response = await client.images.generate(
+        model=model.model,
+        prompt=item["prompt"],
+        response_format="b64_json",
+        **model.params,
+    )
+    image = ctx.media.from_base64(response.data[0].b64_json, format="png", name=item["id"])
+    return TaskOutput(text="Generated image", media=[image])
+
+exp.workflow = workflow
+```
+
+Responses API image generation follows the same pattern: call `client.responses.create(...)`, extract the image base64 from the response, save it with `ctx.media.from_base64(...)`, and return `TaskOutput(media=[...])`.
 
 ## Built-In Evaluators
 
@@ -334,14 +370,16 @@ runs/20260415-143205_qa_smoke/
   scores.csv
   steps.csv
   artifacts/
+  media/
 ```
 
 - `manifest.json` stores experiment-run settings, model configs, dataset hash, experiment hash, copied artifact metadata, and environment metadata.
-- `results.jsonl` stores full item-run records, including raw request/response data, final output, step records, scores, usage, latency, and errors. Inline `data:` URLs in raw payloads are compacted by default.
-- `results.csv` is a spreadsheet-friendly summary with one row per item run.
+- `results.jsonl` stores full item-run records, including final `TaskOutput`, step records, scores, usage, latency, media metadata, and errors.
+- `results.csv` is a spreadsheet-friendly summary with one row per item run, including compact media columns.
 - `scores.csv` is long-form score data with `scope` and `step_key` columns.
-- `steps.csv` is a spreadsheet-friendly summary with one row per step.
+- `steps.csv` is a spreadsheet-friendly summary with one row per step, including compact media columns.
 - `artifacts/` contains files copied from `Experiment(..., artifacts=[...])`, such as prompt templates or run configs.
+- `media/` contains generated outputs saved with `ctx.media`.
 
 The final console summary includes score tables by model and by eval key, plus average per-item-run and total token usage by model for input, cached, output, reasoning, and total tokens.
 
@@ -356,8 +394,8 @@ that contains `manifest.json`:
 prism view runs/
 ```
 
-The viewer is read-only. It shows an all-runs table, per-run item details, score
-matrices, step details, downloadable artifacts, and lane comparisons across
+The viewer is read-only. It shows an all-runs table, per-run item details, media
+previews, score matrices, step details, downloadable artifacts, and lane comparisons across
 `run + model_key` pairs.
 
 The first launch installs the viewer's Node dependencies if they are missing.
@@ -385,6 +423,31 @@ exp = Experiment(
 ```
 
 `redact_raw_data_urls=True` keeps multimodal runs compact by replacing inline
-base64 media in raw request/response payloads with a short deterministic marker
-containing the media type, hash, and size. Set it to `False` only when you need
-byte-for-byte raw media payloads in `results.jsonl`.
+base64 media in legacy proxied raw payloads with a short deterministic marker.
+Direct SDK calls are not captured automatically; store relevant details in
+`TaskOutput.metadata` when you need them.
+
+## Migration Notes
+
+See [MIGRATION.md](MIGRATION.md) for the complete guide. Prism now requires
+explicit `TaskOutput` returns.
+
+```python
+# Old
+return response.output_text
+
+# New
+return TaskOutput(text=response.output_text)
+```
+
+For structured outputs:
+
+```python
+# Old
+return {"answer": parsed}
+
+# New
+return TaskOutput(text=json.dumps(parsed), value=parsed)
+```
+
+Generated files belong in `media/` through `ctx.media`; `artifacts/` remains for copied experiment inputs. Custom JSONL consumers should read generated media from `output.media` or `steps[].output.media` instead of parsing image bytes from raw OpenAI responses.

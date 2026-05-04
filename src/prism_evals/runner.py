@@ -21,8 +21,9 @@ from prism_evals.models import (
     RunManifest,
     TaskOutput,
     TokenUsage,
+    require_task_output,
 )
-from prism_evals.openai import ExperimentContext, make_default_client
+from prism_evals.openai import ExperimentContext
 from prism_evals.storage import Storage
 
 if TYPE_CHECKING:
@@ -76,7 +77,7 @@ class Runner:
         total = len(items) * len(exp.registered_models) * exp.repetitions
         skipped = total - len(work)
         remaining_by_model = Counter(model.key for _, model, _ in work)
-        client = exp.openai_client or make_default_client()
+        client = exp.openai_client
         new_records: list[ItemRunRecord] = []
         latest_records = dict(existing)
         append_lock = asyncio.Lock()
@@ -150,6 +151,7 @@ class Runner:
             item=item.data,
             model=model,
             item_run_id=item_run_id_value,
+            run_dir=exp.run_dir(),
             capture_raw=exp.capture_raw,
             max_retries=exp.max_retries,
             redact_raw_data_urls=exp.redact_raw_data_urls,
@@ -164,7 +166,7 @@ class Runner:
             workflow_result = workflow(item.data, model, ctx)
             if inspect.isawaitable(workflow_result):
                 workflow_result = await workflow_result
-            output = TaskOutput.normalize(workflow_result)
+            output = require_task_output(workflow_result, context="workflow")
             evals = await self._run_evals(item, model, output, ctx)
             if exp.fail_fast and has_eval_errors(evals):
                 raise RuntimeError("item-run eval failed")

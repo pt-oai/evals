@@ -79,6 +79,18 @@ export async function resolveArtifact(runKey: string, artifactName: string): Pro
   return target;
 }
 
+export async function resolveMedia(runKey: string, mediaPath: string): Promise<string> {
+  const dir = await resolveRunDir(runKey);
+  const mediaRoot = path.join(dir, "media");
+  const target = path.join(dir, mediaPath);
+  const [realRoot, realTarget] = await Promise.all([fs.realpath(mediaRoot), fs.realpath(target)]);
+  if (realTarget !== realRoot && !realTarget.startsWith(`${realRoot}${path.sep}`)) {
+    throw new Error("Media file was not found.");
+  }
+  await fs.access(realTarget);
+  return realTarget;
+}
+
 async function discoverRunEntries(): Promise<Array<{ key: string; dir: string }>> {
   const root = runsRoot();
   const entries = await fs.readdir(root, { withFileTypes: true });

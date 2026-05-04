@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from prism_evals import Experiment, ModelConfig
+from prism_evals import Experiment, ModelConfig, TaskOutput
 
 
 def write_dataset(tmp_path):
@@ -24,7 +24,7 @@ def test_registers_workflow_model_and_eval(tmp_path, fake_client):
     exp.model(ModelConfig(key="m1", model="gpt-test"))
 
     async def workflow(item, model, ctx):
-        return "ok"
+        return TaskOutput(text="ok")
 
     def always(item, model, output, ctx):
         return True
@@ -66,6 +66,28 @@ def test_workflow_must_be_callable(tmp_path):
 
     with pytest.raises(TypeError, match="callable"):
         exp.workflow = "not callable"
+
+
+def test_task_output_serializes_text_value_media():
+    output = TaskOutput(
+        text="hello",
+        value={"answer": "world"},
+        media=[
+            {
+                "path": "media/example.png",
+                "mime_type": "image/png",
+                "format": "png",
+                "sha256": "abc",
+                "bytes": 3,
+            }
+        ],
+    )
+
+    payload = output.model_dump(mode="json")
+
+    assert payload["text"] == "hello"
+    assert payload["value"] == {"answer": "world"}
+    assert payload["media"][0]["path"] == "media/example.png"
 
 
 def test_eval_requires_callable(tmp_path):
