@@ -99,6 +99,6 @@ Available model keys:
 ## Troubleshooting
 
 - Missing API key: set `OPENAI_API_KEY` in the shell where you run `prism`.
-- Unavailable model slug: edit the model list in `examples/support_demo_common.py`, or run with `PRISM_SUPPORT_MODEL_KEYS` to use a model that is available to your account.
+- Unavailable model slug: edit the model list in the demo file you are running, or run with `PRISM_SUPPORT_MODEL_KEYS` to use a model that is available to your account.
 - Scores look unexpected: open the generated run directory under `examples/runs/` and inspect `results.csv`, `scores.csv`, and `steps.csv`.
 - Prompt provenance: each run copies the active guardrail prompt and workload prompt into `artifacts/`.
