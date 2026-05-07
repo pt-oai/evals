@@ -117,5 +117,28 @@ def route_accuracy(item, model, output, ctx):
     )
 
 
+def guardrail_returns_json(item, model, output, ctx):
+    try:
+        value = parse_json_output(output.text)
+    except Exception as exc:
+        return EvalResult(score=False, comment=f"response was not valid JSON: {exc}")
+
+    has_route = value.get("route") in ROUTES
+    has_allowed = isinstance(value.get("allowed"), bool)
+    has_reason = isinstance(value.get("reason"), str) and bool(value["reason"].strip())
+    score = has_route and has_allowed and has_reason
+    comment = None if score else "JSON must include route, allowed, and reason"
+    return EvalResult(
+        score=score,
+        comment=comment,
+        metadata={"has_route": has_route, "has_allowed": has_allowed, "has_reason": has_reason},
+    )
+
+
 exp.workflow = guardrail_only
+exp.eval(
+    "guardrail_returns_json",
+    guardrail_returns_json,
+    description="Guardrail response is valid JSON with route, allowed, and reason",
+)
 exp.eval("route_accuracy", route_accuracy, description="Guardrail route matches expected route")

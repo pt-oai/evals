@@ -143,7 +143,7 @@ async def support_agent(item, model, ctx):
             ),
         )
         value = parse_json_output(response.output_text)
-        return TaskOutput(text=value["reply"], value=value)
+        return TaskOutput(text=value["reply"], value=value, metadata={"raw_json": response.output_text})
 
     return await ctx.step("customer_response", write_customer_response)
 
@@ -192,7 +192,32 @@ def end_to_end_success(item, model, output, ctx):
     )
 
 
+def agent_returns_json(item, model, output, ctx):
+    raw_json = output.metadata.get("raw_json") if isinstance(output.metadata, dict) else None
+    if not isinstance(raw_json, str):
+        return EvalResult(score=False, comment="raw JSON response was not recorded")
+    try:
+        value = parse_json_output(raw_json)
+    except Exception as exc:
+        return EvalResult(score=False, comment=f"response was not valid JSON: {exc}")
+
+    has_reply = isinstance(value.get("reply"), str) and bool(value["reply"].strip())
+    has_action = value.get("action") in ACTIONS
+    score = has_reply and has_action
+    comment = None if score else "JSON must include a non-empty reply and a valid action"
+    return EvalResult(
+        score=score,
+        comment=comment,
+        metadata={"has_reply": has_reply, "has_action": has_action},
+    )
+
+
 exp.workflow = support_agent
+exp.eval(
+    "agent_returns_json",
+    agent_returns_json,
+    description="Final agent response is valid JSON with reply and action",
+)
 exp.eval(
     "end_to_end_success",
     end_to_end_success,

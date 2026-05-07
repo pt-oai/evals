@@ -63,7 +63,7 @@ Then rerun the same command:
 prism run examples/support_guardrail_demo.py
 ```
 
-In the viewer, compare the two `support_guardrail_demo` runs by timestamp. This is the fast loop for improving the first prompt without paying for the workload step. Each run copies the current `support_guardrail.md` into `artifacts/`, so you can show exactly what changed.
+In the viewer, compare the two `support_guardrail_demo` runs by timestamp. Show `guardrail_returns_json` first to confirm the prompt kept the JSON contract, then `route_accuracy` to show the actual prompt-quality improvement. Each run copies the current `support_guardrail.md` into `artifacts/`, so you can show exactly what changed.
 
 ## 2. Run The Full Agent Chain
 
@@ -71,7 +71,7 @@ In the viewer, compare the two `support_guardrail_demo` runs by timestamp. This 
 prism run examples/support_agent_demo.py
 ```
 
-If you want the before/after full-chain story, run this once before the prompt edit and once after the prompt edit. In the viewer, compare the two `support_agent_demo` runs by timestamp. Show `guardrail_triage / route_accuracy` first, then show `end_to_end_success` to connect the prompt improvement to the full agent score.
+If you want the before/after full-chain story, run this once before the prompt edit and once after the prompt edit. In the viewer, compare the two `support_agent_demo` runs by timestamp. Show `guardrail_triage / route_accuracy` first, `agent_returns_json` to confirm the final step kept the JSON contract, then `end_to_end_success` to connect the prompt improvement to the full agent score.
 
 ## Open The Viewer
 
