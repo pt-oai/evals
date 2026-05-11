@@ -16,6 +16,7 @@ import {
   recordScore,
   scoreNumber,
 } from "../lib/evals";
+import { mediaKind } from "../lib/media";
 import {
   availableReferenceIds,
   defaultRunDetailPreferences,
@@ -799,15 +800,33 @@ function MediaGrid({ media, runKey }: { media: MediaArtifact[]; runKey: string }
     <div className="grid gap-3 sm:grid-cols-2">
       {media.map((item) => (
         <figure key={item.path} className="rounded-md border border-line bg-white p-2">
-          <img
-            src={mediaHref(runKey, item.path)}
-            alt={item.metadata?.alt && typeof item.metadata.alt === "string" ? item.metadata.alt : "Generated output"}
-            className="max-h-96 w-full rounded object-contain"
-          />
+          <MediaPreview item={item} runKey={runKey} />
           <figcaption className="mt-2 truncate text-xs text-slate-500">{item.path}</figcaption>
         </figure>
       ))}
     </div>
+  );
+}
+
+function MediaPreview({ item, runKey }: { item: MediaArtifact; runKey: string }) {
+  const href = mediaHref(runKey, item.path);
+  const kind = mediaKind(item.mime_type);
+  if (kind === "image") {
+    return (
+      <img
+        src={href}
+        alt={item.metadata?.alt && typeof item.metadata.alt === "string" ? item.metadata.alt : "Generated output"}
+        className="max-h-96 w-full rounded object-contain"
+      />
+    );
+  }
+  if (kind === "audio") {
+    return <audio controls src={href} className="w-full" />;
+  }
+  return (
+    <a href={href} className="text-sm font-medium text-leaf hover:underline">
+      Open media
+    </a>
   );
 }
 

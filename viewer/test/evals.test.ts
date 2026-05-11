@@ -4,6 +4,7 @@ import path from "path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { aggregateScores, buildCompareResult, buildLanes, buildRunSummary } from "../lib/evals";
+import { mediaKind } from "../lib/media";
 import { loadCompare, loadRunSummaries, resolveMedia } from "../lib/server/runs";
 import type { ItemRunRecord, RunManifest, TokenUsage } from "../lib/types";
 
@@ -152,6 +153,14 @@ describe("server artifact loading", () => {
     const expected = await realpath(path.join(root, "run-a", "media", "item-1.png"));
     await expect(resolveMedia("run-a", "media/item-1.png")).resolves.toBe(expected);
     await expect(resolveMedia("run-a", "results.jsonl")).rejects.toThrow("Media file was not found");
+  });
+});
+
+describe("media previews", () => {
+  it("classifies media by mime type", () => {
+    expect(mediaKind("image/png")).toBe("image");
+    expect(mediaKind("audio/wav")).toBe("audio");
+    expect(mediaKind("application/octet-stream")).toBe("file");
   });
 });
 

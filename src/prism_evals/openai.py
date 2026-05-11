@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import inspect
 import re
 import shutil
 import time
+import wave
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +94,271 @@ class ResponsesProxy:
         raise RuntimeError("unreachable retry state")
 
 
+@dataclass(frozen=True)
+class RealtimeRunResult:
+    response_id: str | None
+    status: str | None
+    text: str = ""
+    transcript: str = ""
+    audio: bytes = b""
+    media: list[MediaArtifact] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    usage: TokenUsage = field(default_factory=TokenUsage)
+    events: list[Any] = field(default_factory=list)
+    response: Any | None = None
+
+    def task_output(self) -> TaskOutput:
+        output_text = self.text or self.transcript
+        return TaskOutput(
+            text=output_text,
+            value={
+                "response_id": self.response_id,
+                "status": self.status,
+                "text": self.text,
+                "transcript": self.transcript,
+                "audio_bytes": len(self.audio),
+                "event_count": len(self.events),
+                "tool_call_count": len(self.tool_calls),
+                "tool_calls": self.tool_calls,
+            },
+            media=self.media,
+            metadata={
+                "realtime_response_id": self.response_id,
+                "tool_call_count": len(self.tool_calls),
+            },
+        )
+
+
+class RealtimeProxy:
+    def __init__(
+        self,
+        client: Any,
+        generations: list[GenerationRecord],
+        media: "MediaStore",
+        *,
+        model: ModelConfig,
+        capture_raw: bool,
+        max_retries: int,
+        redact_raw_data_urls: bool = True,
+    ) -> None:
+        self._client = client
+        self._generations = generations
+        self._media = media
+        self._model = model
+        self._capture_raw = capture_raw
+        self._redact_raw_data_urls = redact_raw_data_urls
+        self._max_retries = max(1, max_retries)
+
+    def connect(self, *, model: str | None = None, **kwargs: Any) -> Any:
+        return self._client.realtime.connect(model=model or self._model.model, **kwargs)
+
+    async def run_text(
+        self,
+        text: str,
+        *,
+        model: str | None = None,
+        instructions: str | None = None,
+        session: dict[str, Any] | None = None,
+        response: dict[str, Any] | None = None,
+        timeout_s: float = 60.0,
+    ) -> RealtimeRunResult:
+        async def add_text_input(connection: Any) -> None:
+            await connection.conversation.item.create(
+                item={
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": text}],
+                }
+            )
+
+        return await self._run(
+            model=model,
+            instructions=instructions,
+            session=session,
+            response=response,
+            output_modalities=["text"],
+            setup_input=add_text_input,
+            timeout_s=timeout_s,
+            raw_request={"input_text": text},
+        )
+
+    async def run_audio(
+        self,
+        audio: bytes | str | Path,
+        *,
+        model: str | None = None,
+        instructions: str | None = None,
+        session: dict[str, Any] | None = None,
+        response: dict[str, Any] | None = None,
+        input_rate: int = 24000,
+        output_rate: int = 24000,
+        chunk_bytes: int = 15 * 1024 * 1024,
+        output_name: str | None = None,
+        timeout_s: float = 60.0,
+    ) -> RealtimeRunResult:
+        pcm_audio, input_rate = pcm16_audio(audio, default_rate=input_rate)
+
+        async def add_audio_input(connection: Any) -> None:
+            for start in range(0, len(pcm_audio), chunk_bytes):
+                chunk = pcm_audio[start : start + chunk_bytes]
+                await connection.input_audio_buffer.append(audio=base64.b64encode(chunk).decode("ascii"))
+            await connection.input_audio_buffer.commit()
+
+        result = await self._run(
+            model=model,
+            instructions=instructions,
+            session=session,
+            response=response,
+            output_modalities=["audio", "text"],
+            setup_input=add_audio_input,
+            timeout_s=timeout_s,
+            raw_request={"input_audio_bytes": len(pcm_audio), "input_rate": input_rate},
+        )
+        if not result.audio:
+            return result
+        wav_audio = wav_from_pcm16(result.audio, sample_rate=output_rate)
+        artifact = self._media.from_bytes(
+            wav_audio,
+            format="wav",
+            name=output_name or "realtime-output",
+            mime_type="audio/wav",
+            metadata={"kind": "realtime_audio", "sample_rate": output_rate},
+        )
+        return RealtimeRunResult(
+            response_id=result.response_id,
+            status=result.status,
+            text=result.text,
+            transcript=result.transcript,
+            audio=result.audio,
+            media=[artifact],
+            tool_calls=result.tool_calls,
+            usage=result.usage,
+            events=result.events,
+            response=result.response,
+        )
+
+    async def _run(
+        self,
+        *,
+        model: str | None,
+        instructions: str | None,
+        session: dict[str, Any] | None,
+        response: dict[str, Any] | None,
+        output_modalities: list[str],
+        setup_input: Any,
+        timeout_s: float,
+        raw_request: dict[str, Any],
+    ) -> RealtimeRunResult:
+        started = time.perf_counter()
+        model_name = model or self._model.model
+        session_payload = {
+            "type": "realtime",
+            "model": model_name,
+            "output_modalities": output_modalities,
+            **self._model.params,
+            **dict(session or {}),
+        }
+        if instructions is not None:
+            session_payload["instructions"] = instructions
+        response_payload = {"output_modalities": output_modalities, **dict(response or {})}
+        sent_events = [
+            {"type": "session.update", "session": session_payload},
+            raw_request,
+            {"type": "response.create", "response": response_payload},
+        ]
+        events: list[Any] = []
+        text_parts: list[str] = []
+        transcript_parts: list[str] = []
+        audio_parts: list[bytes] = []
+        response_done = None
+        try:
+            async for attempt in AsyncRetrying(
+                retry=retry_if_exception(is_retryable_openai_error),
+                stop=stop_after_attempt(self._max_retries),
+                wait=wait_exponential_jitter(initial=0.5, max=8.0),
+                reraise=True,
+            ):
+                with attempt:
+                    async with self.connect(model=model_name) as connection:
+                        await connection.session.update(session=session_payload)
+                        await setup_input(connection)
+                        await connection.response.create(response=response_payload)
+                        async with asyncio.timeout(timeout_s):
+                            async for event in connection:
+                                events.append(event)
+                                event_type = _get(event, "type", "")
+                                if event_type == "response.output_text.delta":
+                                    text_parts.append(str(_get(event, "delta", "")))
+                                elif event_type == "response.output_audio_transcript.delta":
+                                    transcript_parts.append(str(_get(event, "delta", "")))
+                                elif event_type == "response.output_audio.delta":
+                                    audio_parts.append(base64.b64decode(str(_get(event, "delta", ""))))
+                                elif event_type == "error":
+                                    message = _get(_get(event, "error", {}), "message", "Realtime API error")
+                                    raise RuntimeError(str(message))
+                                elif event_type == "response.done":
+                                    response_done = _get(event, "response")
+                                    break
+                        if response_done is None:
+                            raise RuntimeError("Realtime response stream ended before response.done")
+                    break
+        except Exception as exc:
+            self._generations.append(
+                GenerationRecord(
+                    latency_s=time.perf_counter() - started,
+                    raw_request=raw_payload(sent_events, redact_raw_data_urls=self._redact_raw_data_urls)
+                    if self._capture_raw
+                    else None,
+                    raw_response=redact_realtime_events(events) if self._capture_raw else None,
+                    error=exception_to_error(exc),
+                    metadata={"api": "realtime", "event_count": len(events)},
+                )
+            )
+            raise
+
+        response_id = _get(response_done, "id")
+        status = _get(response_done, "status")
+        usage = extract_usage(response_done)
+        output_text = "".join(text_parts)
+        transcript = "".join(transcript_parts)
+        audio = b"".join(audio_parts)
+        tool_calls = parse_realtime_tool_calls(events, response_done)
+        self._generations.append(
+            GenerationRecord(
+                response_id=response_id,
+                latency_s=time.perf_counter() - started,
+                usage=usage,
+                raw_request=raw_payload(sent_events, redact_raw_data_urls=self._redact_raw_data_urls)
+                if self._capture_raw
+                else None,
+                raw_response=redact_realtime_events(events) if self._capture_raw else None,
+                output_text=output_text or transcript,
+                metadata={
+                    "api": "realtime",
+                    "status": status,
+                    "event_count": len(events),
+                    "audio_bytes": len(audio),
+                    "transcript_chars": len(transcript),
+                    "tool_call_count": len(tool_calls),
+                    "tool_call_names": [
+                        call["name"] for call in tool_calls if isinstance(call.get("name"), str)
+                    ],
+                },
+            )
+        )
+        return RealtimeRunResult(
+            response_id=response_id,
+            status=status,
+            text=output_text,
+            transcript=transcript,
+            audio=audio,
+            tool_calls=tool_calls,
+            usage=usage,
+            events=events,
+            response=response_done,
+        )
+
+
 class ExperimentContext:
     def __init__(
         self,
@@ -118,6 +386,15 @@ class ExperimentContext:
         self.responses = ResponsesProxy(
             client,
             self.generations,
+            capture_raw=capture_raw,
+            max_retries=max_retries,
+            redact_raw_data_urls=redact_raw_data_urls,
+        )
+        self.realtime = RealtimeProxy(
+            client,
+            self.generations,
+            self.media,
+            model=model,
             capture_raw=capture_raw,
             max_retries=max_retries,
             redact_raw_data_urls=redact_raw_data_urls,
@@ -311,6 +588,8 @@ def normalize_media_format(value: str) -> str:
 def mime_type_for_format(media_format: str) -> str:
     if media_format in {"png", "jpeg", "webp", "gif"}:
         return f"image/{media_format}"
+    if media_format == "wav":
+        return "audio/wav"
     return "application/octet-stream"
 
 
@@ -328,8 +607,8 @@ def extract_usage(response: Any) -> TokenUsage:
     if usage is None:
         return TokenUsage()
 
-    input_details = _get(usage, "input_tokens_details", {}) or {}
-    output_details = _get(usage, "output_tokens_details", {}) or {}
+    input_details = _get(usage, "input_tokens_details", None) or _get(usage, "input_token_details", {}) or {}
+    output_details = _get(usage, "output_tokens_details", None) or _get(usage, "output_token_details", {}) or {}
     return TokenUsage(
         input_tokens=int(_get(usage, "input_tokens", 0) or 0),
         cached_tokens=int(_get(input_details, "cached_tokens", 0) or 0),
@@ -337,6 +616,130 @@ def extract_usage(response: Any) -> TokenUsage:
         reasoning_tokens=int(_get(output_details, "reasoning_tokens", 0) or 0),
         total_tokens=int(_get(usage, "total_tokens", 0) or 0),
     )
+
+
+def pcm16_audio(audio: bytes | str | Path, *, default_rate: int) -> tuple[bytes, int]:
+    if isinstance(audio, bytes):
+        return audio, default_rate
+    path = Path(audio).expanduser().resolve()
+    if path.suffix.lower() != ".wav":
+        return path.read_bytes(), default_rate
+    with wave.open(str(path), "rb") as handle:
+        if handle.getnchannels() != 1:
+            raise ValueError("Realtime audio fixtures must be mono WAV files")
+        if handle.getsampwidth() != 2:
+            raise ValueError("Realtime audio fixtures must be 16-bit PCM WAV files")
+        rate = handle.getframerate()
+        return handle.readframes(handle.getnframes()), rate
+
+
+def wav_from_pcm16(audio: bytes, *, sample_rate: int) -> bytes:
+    import io
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(sample_rate)
+        handle.writeframes(audio)
+    return buffer.getvalue()
+
+
+def redact_realtime_events(events: list[Any]) -> list[Any]:
+    return [redact_realtime_payload(raw_payload(event)) for event in events]
+
+
+def parse_realtime_tool_calls(events: list[Any], response: Any | None) -> list[dict[str, Any]]:
+    calls: dict[str, dict[str, Any]] = {}
+
+    def upsert(payload: Any, *, output_index: Any = None, source: str | None = None) -> None:
+        item = raw_payload(payload)
+        if not isinstance(item, dict):
+            return
+        item_type = item.get("type")
+        if item_type not in {"function_call", "mcp_tool_call"}:
+            return
+        key = str(item.get("call_id") or item.get("id") or f"tool_call_{len(calls)}")
+        current = calls.setdefault(key, {"type": item_type})
+        for field_name in ("id", "call_id", "name", "arguments", "status"):
+            value = item.get(field_name)
+            if value not in (None, ""):
+                current[field_name] = value
+        if output_index is not None:
+            current["output_index"] = output_index
+        if source:
+            current["source"] = source
+        arguments = current.get("arguments")
+        if isinstance(arguments, str):
+            try:
+                current["arguments_json"] = json_loads(arguments)
+            except ValueError:
+                pass
+
+    for event in events:
+        payload = raw_payload(event)
+        if not isinstance(payload, dict):
+            continue
+        event_type = payload.get("type")
+        if event_type in {"response.output_item.added", "response.output_item.done"}:
+            upsert(
+                payload.get("item"),
+                output_index=payload.get("output_index"),
+                source=str(event_type),
+            )
+        elif event_type == "response.function_call_arguments.done":
+            upsert(
+                {
+                    "type": "function_call",
+                    "id": payload.get("item_id"),
+                    "call_id": payload.get("call_id"),
+                    "name": payload.get("name"),
+                    "arguments": payload.get("arguments"),
+                },
+                output_index=payload.get("output_index"),
+                source=str(event_type),
+            )
+
+    response_payload = raw_payload(response)
+    if isinstance(response_payload, dict):
+        for index, item in enumerate(response_payload.get("output") or []):
+            upsert(item, output_index=index, source="response.done")
+
+    return list(calls.values())
+
+
+def redact_realtime_payload(value: Any) -> Any:
+    if isinstance(value, list):
+        return [redact_realtime_payload(item) for item in value]
+    if isinstance(value, dict):
+        redacted = {}
+        for key, item in value.items():
+            if key in {"audio", "delta"} and isinstance(item, str) and looks_like_base64_audio(item):
+                redacted[key] = base64_marker(item)
+            else:
+                redacted[key] = redact_realtime_payload(item)
+        return redacted
+    return value
+
+
+def looks_like_base64_audio(value: str) -> bool:
+    compact = "".join(value.split())
+    return len(compact) > 128 and re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", compact) is not None
+
+
+def base64_marker(value: str) -> str:
+    compact = "".join(value.split())
+    digest = hashlib.sha256(compact.encode("ascii", errors="ignore")).hexdigest()
+    return f"<redacted base64 media sha256={digest} base64_chars={len(compact)}>"
+
+
+def json_loads(value: str) -> Any:
+    import json
+
+    try:
+        return json.loads(value)
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def is_retryable_openai_error(exc: BaseException) -> bool:

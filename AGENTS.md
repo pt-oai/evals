@@ -215,7 +215,11 @@ Return `TaskOutput(text=..., value=..., media=[...])` for display text,
 structured data, and generated media. Built-in selectors such as `text()`,
 `out("path")`, `step("step_key.path")`, and `step_text("step_key")` depend on
 that structure. Use `ctx.media.from_base64(...)`, `ctx.media.from_bytes(...)`,
-or `ctx.media.from_path(...)` to save generated images into `media/`.
+or `ctx.media.from_path(...)` to save generated outputs into `media/`.
+
+Use `ctx.realtime.run_text(...)` or `ctx.realtime.run_audio(...)` for Realtime
+API evals. Realtime helpers still return data through `TaskOutput`, and audio
+outputs should be attached as run-local media.
 
 ## Viewer UI Preferences
 

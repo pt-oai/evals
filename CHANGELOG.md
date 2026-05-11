@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.8.0] - 2026-05-11
+
+### Added
+
+- Added first-class Realtime workflow support through `ctx.realtime`, including
+  text and audio helpers for `gpt-realtime-2`.
+- Parsed Realtime tool calls into `RealtimeRunResult.tool_calls` and
+  `TaskOutput.value["tool_calls"]` for scoring.
+- Added Realtime text and voice-agent smoke examples, plus viewer playback for
+  audio media.
+
 ## [0.7.0] - 2026-05-04
 
 ### Changed

@@ -26,6 +26,7 @@ from prism_evals.models import (
     TaskOutput,
     TokenUsage,
 )
+from prism_evals.openai import RealtimeRunResult
 
 __all__ = [
     "ApproxEqual",
@@ -44,6 +45,7 @@ __all__ = [
     "NonEmpty",
     "NotEqual",
     "RegexMatch",
+    "RealtimeRunResult",
     "StepRecord",
     "TaskOutput",
     "TokenUsage",

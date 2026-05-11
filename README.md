@@ -294,6 +294,65 @@ exp.workflow = workflow
 
 Responses API image generation follows the same pattern: call `client.responses.create(...)`, extract the image base64 from the response, save it with `ctx.media.from_base64(...)`, and return `TaskOutput(media=[...])`.
 
+## Realtime
+
+Use `ctx.realtime` for Realtime API evals. Prism manages the session, captures one generation record per completed Realtime response, and keeps the normal `TaskOutput` workflow contract.
+
+```python
+from prism_evals import Contains, Experiment, ModelConfig, item, text
+
+exp = Experiment(name="realtime_text", dataset="datasets/realtime.csv", output_dir="runs")
+exp.model(ModelConfig(key="realtime2_low", model="gpt-realtime-2", params={"reasoning": {"effort": "low"}}))
+
+async def workflow(item, model, ctx):
+    result = await ctx.realtime.run_text(
+        item["prompt"],
+        instructions="Answer briefly and follow the user's requested format exactly.",
+    )
+    return result.task_output()
+
+exp.workflow = workflow
+exp.eval("contains_expected", Contains(container=text(), expected=item("expected"), case_sensitive=False))
+```
+
+Realtime audio evals can stream 16-bit mono PCM WAV fixtures and store model audio as playable WAV media:
+
+```python
+async def workflow(item, model, ctx):
+    result = await ctx.realtime.run_audio(
+        item["audio_path"],
+        session={
+            "audio": {
+                "input": {"format": {"type": "audio/pcm", "rate": 24000}, "turn_detection": None},
+                "output": {"format": {"type": "audio/pcm"}, "voice": "marin"},
+            }
+        },
+    )
+    return result.task_output()
+```
+
+Runnable examples:
+
+```bash
+prism run examples/realtime_text_smoke.py
+prism run examples/realtime_voice_agent_smoke.py
+```
+
+Realtime results include parsed tool calls in `TaskOutput.value`, so evals can
+score whether each turn called a tool without walking raw events:
+
+```python
+from prism_evals import EvalResult
+
+def called_lookup_tool(item, model, output, ctx):
+    tool_calls = output.value.get("tool_calls", []) if isinstance(output.value, dict) else []
+    names = [call.get("name") for call in tool_calls]
+    return EvalResult(
+        score="lookup_order" in names,
+        metadata={"tool_call_count": len(tool_calls), "tool_call_names": names},
+    )
+```
+
 ## Built-In Evaluators
 
 Built-ins are registered directly with `exp.eval("key", evaluator)` or as step eval tuples.

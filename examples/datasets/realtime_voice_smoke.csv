@@ -1,0 +1,2 @@
+id,audio_path,expected_phrase
+rt-voice-1,audio/realtime_prism.wav,prism

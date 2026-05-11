@@ -103,6 +103,7 @@ class GenerationRecord(BaseModel):
     raw_request: Any | None = None
     raw_response: Any | None = None
     output_text: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
     error: ErrorRecord | None = None
 
 
