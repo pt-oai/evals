@@ -1,0 +1,9 @@
+id,customer_message,expected_decision,required_terms,forbidden_terms,case_note
+worn-boots,"I got hiking boots 12 days ago and wore them on two hikes. Can I return them?",NOT_ELIGIBLE,"unused|unworn|original packaging","you can return|refund to original payment|full refund","Worn items should fail even inside 30 days."
+damaged-jacket,"My rain jacket arrived with a broken zipper yesterday. Can you replace it?",ELIGIBLE,"7 days|photos|replace","return shipping|customer pays","Damaged item is eligible, but the answer should ask for photos and mention the short reporting window."
+gift-no-receipt,"I received a backpack as a gift and do not have a receipt. Can I get my money back?",ELIGIBLE,"store credit|proof of purchase","cash refund|card refund|full refund","Gift without proof of purchase is only store credit."
+final-sale-damaged,"I bought a final-sale tent and one pole arrived cracked. Am I stuck with it?",ELIGIBLE,"final-sale|damaged|photos","not returnable|stuck","Final-sale exception applies when the item arrived damaged."
+final-sale-size,"The final-sale fleece I bought is too small. Can I exchange it?",NOT_ELIGIBLE,"final-sale|not returnable|exchange","you can exchange|eligible for exchange|45-day exchange","Final-sale size issues are not eligible."
+missing-date,"I want to return a water bottle, but I am not sure when it arrived. Can I send it back?",NEEDS_INFO,"delivery date|unused|original packaging","you can send it back|you can return|refund","Missing date and condition should trigger NEEDS_INFO."
+missing-condition,"I bought a sleeping bag 20 days ago. Can I return it?",NEEDS_INFO,"unused|original packaging","you can return|refund|eligible for a return","Inside 30 days, but item condition and packaging are missing."
+late-exchange,"I bought a backpack 60 days ago and it is unused. Can I exchange it for a different color?",NOT_ELIGIBLE,"45 days|exchange","you can exchange|eligible for a different color","Exchange window is 45 days."
