@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.9.0] - 2026-05-21
+
+### Added
+
+- Added folder-backed JSON/YAML scenario datasets, JSONL datasets, CSV
+  `scenario_path`, and CSV `turns_json` expansion for multi-turn eval inputs.
+- Added named model variants for multi-agent workflows, with `ctx.model(role)`
+  access to role-specific `ModelConfig` entries.
+- Added conversation turn recording helpers, seeded user/assistant/action turns,
+  tool-call recording, `turns.csv`, `tool_calls.csv`, and tool-call built-in
+  evaluators.
+
 ## [0.8.0] - 2026-05-11
 
 ### Added

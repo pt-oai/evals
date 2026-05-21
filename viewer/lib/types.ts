@@ -52,6 +52,37 @@ export interface GenerationRecord {
   error?: ErrorRecord | null;
 }
 
+export interface ToolCallRecord {
+  name: string;
+  arguments?: unknown;
+  result?: unknown;
+  agent?: string | null;
+  turn_id?: string | null;
+  call_id?: string | null;
+  status: Status;
+  duration_s: number;
+  started_at?: string | null;
+  ended_at?: string | null;
+  error?: ErrorRecord | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TurnRecord {
+  id: string;
+  role: string;
+  mode?: string | null;
+  status: Status;
+  started_at: string;
+  ended_at: string;
+  duration_s: number;
+  input?: unknown;
+  output?: TaskOutput | null;
+  evals: EvalResult[];
+  tool_calls: ToolCallRecord[];
+  error?: ErrorRecord | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface StepRecord {
   key: string;
   status: Status;
@@ -63,6 +94,7 @@ export interface StepRecord {
   usage: TokenUsage;
   response_id?: string | null;
   generations: GenerationRecord[];
+  tool_calls?: ToolCallRecord[];
   error?: ErrorRecord | null;
   metadata?: Record<string, unknown>;
 }
@@ -84,6 +116,7 @@ export interface ItemRunRecord {
   model_key: string;
   model: string;
   model_params?: Record<string, unknown>;
+  variant_key?: string | null;
   repetition: number;
   status: Status;
   started_at: string;
@@ -95,6 +128,8 @@ export interface ItemRunRecord {
   response_id?: string | null;
   generations: GenerationRecord[];
   steps: StepRecord[];
+  turns?: TurnRecord[];
+  tool_calls?: ToolCallRecord[];
   raw_input?: unknown;
   raw_output?: unknown;
   error?: ErrorRecord | null;
@@ -112,6 +147,7 @@ export interface RunManifest {
   output_dir: string;
   settings?: Record<string, unknown>;
   model_configs: ModelConfig[];
+  variant_configs?: unknown[];
   metadata?: Record<string, unknown>;
   git_commit?: string | null;
   python_version?: string | null;

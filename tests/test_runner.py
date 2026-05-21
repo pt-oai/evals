@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from prism_evals import EvalResult, Experiment, ModelConfig, TaskOutput
+from prism_evals import EvalResult, Experiment, ModelConfig, TaskOutput, ToolArgsEqual, ToolCalled
 from prism_evals.runner import item_run_id, load_dataset
 
 
@@ -86,6 +86,8 @@ def test_runner_executes_item_model_matrix_and_writes_artifacts(tmp_path, fake_c
     assert (run_dir / "results.csv").exists()
     assert (run_dir / "scores.csv").exists()
     assert (run_dir / "steps.csv").exists()
+    assert (run_dir / "turns.csv").exists()
+    assert (run_dir / "tool_calls.csv").exists()
 
 
 def test_item_run_id_is_deterministic(tmp_path, fake_client):
@@ -472,3 +474,121 @@ def test_step_eval_failure_fails_item_run_when_fail_fast(tmp_path, fake_client):
 
     run_dir = exp.run_dir()
     assert (run_dir / "results.jsonl").exists()
+
+
+def test_variant_models_are_available_by_role(tmp_path, fake_client):
+    exp = Experiment(
+        name="variants",
+        dataset=write_dataset(
+            tmp_path,
+            [{"id": "a", "question": "alpha", "expected": "alpha"}],
+        ),
+        output_dir=tmp_path / "runs",
+        openai_client=fake_client,
+        display="quiet",
+    )
+    exp.variant(
+        "candidate",
+        models={
+            "router": "gpt-router",
+            "support": {"model": "gpt-support", "params": {"temperature": 0}},
+        },
+        default_role="support",
+    )
+
+    async def workflow(item, model, ctx):
+        router = ctx.model("router")
+        support = ctx.model("support")
+        assert model.key == "candidate"
+        return TaskOutput(
+            text="ok",
+            value={
+                "router": router.model,
+                "support": support.model,
+                "default": ctx.model.model,
+                "support_temperature": support.params["temperature"],
+            },
+        )
+
+    exp.workflow = workflow
+    records = exp.run()
+
+    assert records[0].status == "success"
+    assert records[0].model_key == "candidate"
+    assert records[0].variant_key == "candidate"
+    assert records[0].output.value == {
+        "router": "gpt-router",
+        "support": "gpt-support",
+        "default": "gpt-support",
+        "support_temperature": 0,
+    }
+    manifest = json.loads((exp.run_dir() / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["variant_configs"][0]["key"] == "candidate"
+
+
+def test_turns_and_tool_calls_are_recorded_and_scored(tmp_path, fake_client):
+    exp = Experiment(
+        name="scenario",
+        dataset=write_dataset(
+            tmp_path,
+            [{"id": "a", "question": "alpha", "expected": "alpha"}],
+        ),
+        output_dir=tmp_path / "runs",
+        openai_client=fake_client,
+        display="quiet",
+    )
+    exp.model(ModelConfig(key="m1", model="gpt-test"))
+
+    async def workflow(item, model, ctx):
+        async with ctx.conversation({"id": "conv-a"}) as convo:
+            convo.user("user_start", "I need paper rolls")
+            convo.assistant_seed("assistant_prior", "I can help with that.")
+
+            async def run_ordering_turn():
+                ctx.record_tool_call(
+                    "start_or_update_paper_roll_order",
+                    arguments={"quantity": 2},
+                    result={"status": "needs_confirmation"},
+                    agent="ordering",
+                )
+                return TaskOutput(text="Please confirm the order.", value={"route": "ordering"})
+
+            await convo.turn(
+                "order_turn",
+                run_ordering_turn,
+                evals=[
+                    ("called_order_tool", ToolCalled("start_or_update_paper_roll_order", turn="order_turn")),
+                    (
+                        "quantity_matches",
+                        ToolArgsEqual("start_or_update_paper_roll_order", "quantity", 2, turn="order_turn"),
+                    ),
+                ],
+            )
+            return convo.task_output()
+
+    exp.workflow = workflow
+    exp.eval("order_tool_called", ToolCalled("start_or_update_paper_roll_order", turn="order_turn"))
+
+    records = exp.run()
+    record = records[0]
+
+    assert record.status == "success"
+    assert [turn.id for turn in record.turns] == ["user_start", "assistant_prior", "order_turn"]
+    assert record.turns[1].role == "assistant"
+    assert record.turns[1].mode == "seed"
+    assert record.tool_calls[0].name == "start_or_update_paper_roll_order"
+    assert record.tool_calls[0].turn_id == "order_turn"
+    assert record.evals[0].score is True
+    assert record.steps[0].key == "turn:order_turn"
+    assert record.steps[0].tool_calls[0].name == "start_or_update_paper_roll_order"
+    assert record.steps[0].evals[0].score is True
+    assert record.steps[0].evals[1].score is True
+
+    with (exp.run_dir() / "turns.csv").open("r", encoding="utf-8") as handle:
+        turn_rows = list(csv.DictReader(handle))
+    assert [row["turn_id"] for row in turn_rows] == ["user_start", "assistant_prior", "order_turn"]
+
+    with (exp.run_dir() / "tool_calls.csv").open("r", encoding="utf-8") as handle:
+        tool_rows = list(csv.DictReader(handle))
+    assert tool_rows[0]["name"] == "start_or_update_paper_roll_order"
+    assert json.loads(tool_rows[0]["arguments_json"]) == {"quantity": 2}

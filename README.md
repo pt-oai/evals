@@ -19,7 +19,7 @@ From the repo where you want to write and run evals:
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "prism-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.7.0"
+python -m pip install "prism-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.9.0"
 prism init
 # or: prism-evals init
 # or: pe init
@@ -110,10 +110,16 @@ python -m pip install -e ".[dev]"
 
 - **Experiment**: the configured eval definition.
 - **Experiment run**: one call to `exp.run()`, with one `run_id` and one output directory.
-- **Item**: one dataset record. For CSV, this is one row.
-- **Item run**: one `item x model x repetition` attempt.
+- **Item**: one dataset record. For CSV, this is one row. For scenario folders,
+  this is one JSON/YAML file.
+- **Item run**: one `item x model variant x repetition` attempt. Plain
+  `exp.model(...)` entries are treated as single-model variants.
 - **Workflow**: the user-defined callable assigned to `exp.workflow`. It must return `TaskOutput`.
 - **Step**: a named unit inside a workflow. Step callables must return `TaskOutput`.
+- **Turn**: a conversation turn recorded with `ctx.turn(...)`, `ctx.user(...)`,
+  `ctx.assistant_seed(...)`, or `ctx.action_seed(...)`.
+- **Tool call**: an application/tool invocation recorded with
+  `ctx.record_tool_call(...)`.
 - **Media**: generated output files saved through `ctx.media` and referenced from `TaskOutput.media`.
 - **Eval**: one named score attached to either a step or the final item-run output.
 
@@ -172,6 +178,60 @@ exp.eval("brevity", LengthBetween(value=text(), max_len=200))
 Run the experiment with `prism run qa_smoke.py`. Direct `python qa_smoke.py`
 execution is still supported if the file includes an explicit `exp.run()` block.
 
+## Scenario Datasets
+
+CSV remains supported, but multi-turn agent evals can use a folder of scenario
+files:
+
+```python
+exp = Experiment(
+    name="support_scenarios",
+    dataset="datasets/scenarios",
+    output_dir="runs",
+)
+```
+
+When `dataset` is a directory, Prism recursively reads every `*.json`,
+`*.yaml`, and `*.yml` file in stable path order. Files whose names start with
+`_` are ignored, so you can keep notes or shared fragments next to cases. One
+file becomes one item; `id` comes from the file, falling back to the filename.
+
+```yaml
+id: hardware-followup-context
+tags: [support, hardware, multiturn]
+context:
+  merchantId: me_bharat_bazaar
+
+turns:
+  - user: My terminal is not connecting.
+  - assistant_seed: Please check the terminal power and network connection.
+  - user: my screen keeps flashing
+    expect:
+      allowed: true
+      route: support
+```
+
+The shorthand turn keys normalize to explicit turn objects. `assistant_seed`
+adds an assistant message to the scenario history; it does not require the
+system under test to generate that message.
+
+CSV can also point to scenario files:
+
+```csv
+id,scenario_path,tags
+hardware-followup,scenarios/hardware_followup.yaml,"support,hardware"
+```
+
+Or keep compact cases inline with JSON columns:
+
+```csv
+id,turns_json
+case-1,"[{""user"":""hello""},{""assistant_seed"":""Hi. How can I help?""}]"
+```
+
+Directory datasets are hashed from the loaded scenario files, and each item
+stores its own content hash so resume invalidates when a scenario changes.
+
 ## Multi-Step Workflow
 
 Use `ctx.step(...)` when one dataset item needs a chain of work. Step callables must return `TaskOutput`, and step evals always receive that step's output.
@@ -221,6 +281,81 @@ async def workflow(item, model, ctx):
     return final
 
 exp.workflow = workflow
+```
+
+## Model Variants
+
+Use `exp.model(...)` for simple model comparisons. For multi-agent workflows
+where roles use different models, register named variants:
+
+```python
+exp.variant(
+    "baseline",
+    models={
+        "router": "gpt-5.4-nano",
+        "support": {"model": "gpt-5.4-mini", "params": {"text": {"verbosity": "low"}}},
+    },
+    default_role="support",
+)
+
+exp.variant(
+    "candidate",
+    models={
+        "router": "gpt-5.4-mini",
+        "support": {"model": "gpt-5.5", "params": {"text": {"verbosity": "low"}}},
+    },
+    default_role="support",
+)
+```
+
+The workflow still receives `(item, model, ctx)`. `model.key` is the variant
+key, while `ctx.model("router")` and `ctx.model("support")` return the
+role-specific `ModelConfig`. `ctx.model.model` and `model.model` continue to
+return the default role's model for backwards compatibility.
+
+## Conversation Turns And Tool Calls
+
+Use conversation helpers when one item is a multi-turn scenario:
+
+```python
+from prism_evals import ToolCalled, TaskOutput
+
+async def workflow(item, model, ctx):
+    async with ctx.conversation(item) as convo:
+        convo.user("start", item["turns"][0]["content"])
+        convo.assistant_seed("prior", "Please check the terminal power and network connection.")
+
+        async def followup():
+            ctx.record_tool_call(
+                "lookup_terminal",
+                arguments={"serial_number": "PSP-BBR-001"},
+                result={"status": "online"},
+                agent="support",
+            )
+            return TaskOutput(text="The terminal is online. Please restart it and try one test transaction.")
+
+        await convo.turn(
+            "followup",
+            followup,
+            evals=[("lookup_called", ToolCalled("lookup_terminal", turn="followup"))],
+        )
+
+        return convo.task_output()
+```
+
+`ctx.user(...)`, `ctx.assistant_seed(...)`, and `ctx.action_seed(...)` record
+seeded context turns. `ctx.turn(...)` records a generated turn and also writes a
+normal `StepRecord` with key `turn:<turn_id>` so existing step-level storage and
+comparison still work.
+
+Tool calls can be scored with built-ins:
+
+```python
+from prism_evals import ToolArgsEqual, ToolCalled, ToolNotCalled
+
+exp.eval("called_lookup", ToolCalled("lookup_terminal", turn="followup"))
+exp.eval("quantity_is_two", ToolArgsEqual("start_order", "quantity", 2))
+exp.eval("did_not_refund", ToolNotCalled("refund_transaction"))
 ```
 
 ## Structured Output
@@ -428,6 +563,8 @@ runs/20260415-143205_qa_smoke/
   results.csv
   scores.csv
   steps.csv
+  turns.csv
+  tool_calls.csv
   artifacts/
   media/
 ```
@@ -437,6 +574,8 @@ runs/20260415-143205_qa_smoke/
 - `results.csv` is a spreadsheet-friendly summary with one row per item run, including compact media columns.
 - `scores.csv` is long-form score data with `scope` and `step_key` columns.
 - `steps.csv` is a spreadsheet-friendly summary with one row per step, including compact media columns.
+- `turns.csv` is a spreadsheet-friendly summary with one row per recorded conversation turn.
+- `tool_calls.csv` is a spreadsheet-friendly summary with one row per recorded tool call.
 - `artifacts/` contains files copied from `Experiment(..., artifacts=[...])`, such as prompt templates or run configs.
 - `media/` contains generated outputs saved with `ctx.media`.
 

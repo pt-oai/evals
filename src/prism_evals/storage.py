@@ -7,7 +7,7 @@ from typing import Any
 
 from prism_evals._utils import to_jsonable
 from prism_evals.artifacts import copy_artifacts as copy_user_artifacts
-from prism_evals.models import ItemRunRecord, RunManifest, StepRecord, TaskOutput
+from prism_evals.models import ItemRunRecord, RunManifest, StepRecord, TaskOutput, ToolCallRecord, TurnRecord
 
 
 class Storage:
@@ -18,6 +18,8 @@ class Storage:
         self.results_csv_path = run_dir / "results.csv"
         self.scores_csv_path = run_dir / "scores.csv"
         self.steps_csv_path = run_dir / "steps.csv"
+        self.turns_csv_path = run_dir / "turns.csv"
+        self.tool_calls_csv_path = run_dir / "tool_calls.csv"
         self.artifacts_dir = run_dir / "artifacts"
         self.media_dir = run_dir / "media"
 
@@ -58,6 +60,8 @@ class Storage:
         self._write_results_csv(records)
         self._write_scores_csv(records)
         self._write_steps_csv(records)
+        self._write_turns_csv(records)
+        self._write_tool_calls_csv(records)
 
     def copy_artifacts(self, specs: list[str | Path], *, base_dir: Path) -> list[dict[str, Any]]:
         return copy_user_artifacts(specs, base_dir=base_dir, artifacts_dir=self.artifacts_dir)
@@ -69,6 +73,8 @@ class Storage:
             "results_csv": self.results_csv_path,
             "scores_csv": self.scores_csv_path,
             "steps_csv": self.steps_csv_path,
+            "turns_csv": self.turns_csv_path,
+            "tool_calls_csv": self.tool_calls_csv_path,
         }
         if self.artifacts_dir.exists():
             paths["artifacts"] = self.artifacts_dir
@@ -114,6 +120,8 @@ class Storage:
             "reasoning_tokens",
             "total_tokens",
             "output_text",
+            "tool_call_count",
+            "tool_call_names_json",
             "media_count",
             "media_paths_json",
             "primary_media_path",
@@ -200,6 +208,8 @@ class Storage:
             "reasoning_tokens",
             "total_tokens",
             "output_text",
+            "tool_call_count",
+            "tool_call_names_json",
             "media_count",
             "media_paths_json",
             "primary_media_path",
@@ -213,6 +223,64 @@ class Storage:
             for record in records:
                 for step in record.steps:
                     writer.writerow(step_row(record, step))
+
+    def _write_turns_csv(self, records: list[ItemRunRecord]) -> None:
+        fieldnames = [
+            "item_run_id",
+            "run_id",
+            "experiment_name",
+            "item_id",
+            "item_index",
+            "model_key",
+            "model",
+            "repetition",
+            "turn_id",
+            "role",
+            "mode",
+            "status",
+            "duration_s",
+            "output_text",
+            "tool_call_count",
+            "tool_call_names_json",
+            "error_type",
+            "error_message",
+            "metadata_json",
+        ]
+        with self.turns_csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for record in records:
+                for turn in record.turns:
+                    writer.writerow(turn_row(record, turn))
+
+    def _write_tool_calls_csv(self, records: list[ItemRunRecord]) -> None:
+        fieldnames = [
+            "item_run_id",
+            "run_id",
+            "experiment_name",
+            "item_id",
+            "item_index",
+            "model_key",
+            "model",
+            "repetition",
+            "turn_id",
+            "agent",
+            "name",
+            "call_id",
+            "status",
+            "duration_s",
+            "arguments_json",
+            "result_json",
+            "error_type",
+            "error_message",
+            "metadata_json",
+        ]
+        with self.tool_calls_csv_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            for record in records:
+                for tool_call in record.tool_calls:
+                    writer.writerow(tool_call_row(record, tool_call))
 
 
 def score_row(record: ItemRunRecord, result: Any, *, scope: str, step_key: str) -> dict[str, Any]:
@@ -240,6 +308,7 @@ def score_row(record: ItemRunRecord, result: Any, *, scope: str, step_key: str) 
 
 def step_row(record: ItemRunRecord, step: StepRecord) -> dict[str, Any]:
     latency_s = sum(generation.latency_s for generation in step.generations)
+    tool_call_names = [call.name for call in step.tool_calls]
     scores = {
         result.key: {
             "score": result.score,
@@ -268,6 +337,8 @@ def step_row(record: ItemRunRecord, step: StepRecord) -> dict[str, Any]:
         "reasoning_tokens": step.usage.reasoning_tokens,
         "total_tokens": step.usage.total_tokens,
         "output_text": step.output.text if step.output else "",
+        "tool_call_count": len(step.tool_calls),
+        "tool_call_names_json": json.dumps(tool_call_names, sort_keys=True),
         **media_summary(step.output),
         "error_type": step.error.type if step.error else "",
         "error_message": step.error.message if step.error else "",
@@ -275,8 +346,58 @@ def step_row(record: ItemRunRecord, step: StepRecord) -> dict[str, Any]:
     }
 
 
+def turn_row(record: ItemRunRecord, turn: TurnRecord) -> dict[str, Any]:
+    tool_call_names = [call.name for call in turn.tool_calls]
+    return {
+        "item_run_id": record.item_run_id,
+        "run_id": record.run_id,
+        "experiment_name": record.experiment_name,
+        "item_id": record.item_id,
+        "item_index": record.item_index,
+        "model_key": record.model_key,
+        "model": record.model,
+        "repetition": record.repetition,
+        "turn_id": turn.id,
+        "role": turn.role,
+        "mode": turn.mode or "",
+        "status": turn.status,
+        "duration_s": f"{turn.duration_s:.6f}",
+        "output_text": turn.output.text if turn.output else "",
+        "tool_call_count": len(turn.tool_calls),
+        "tool_call_names_json": json.dumps(tool_call_names, sort_keys=True),
+        "error_type": turn.error.type if turn.error else "",
+        "error_message": turn.error.message if turn.error else "",
+        "metadata_json": json.dumps(to_jsonable(turn.metadata), sort_keys=True),
+    }
+
+
+def tool_call_row(record: ItemRunRecord, tool_call: ToolCallRecord) -> dict[str, Any]:
+    return {
+        "item_run_id": record.item_run_id,
+        "run_id": record.run_id,
+        "experiment_name": record.experiment_name,
+        "item_id": record.item_id,
+        "item_index": record.item_index,
+        "model_key": record.model_key,
+        "model": record.model,
+        "repetition": record.repetition,
+        "turn_id": tool_call.turn_id or "",
+        "agent": tool_call.agent or "",
+        "name": tool_call.name,
+        "call_id": tool_call.call_id or "",
+        "status": tool_call.status,
+        "duration_s": f"{tool_call.duration_s:.6f}",
+        "arguments_json": json.dumps(to_jsonable(tool_call.arguments), sort_keys=True),
+        "result_json": json.dumps(to_jsonable(tool_call.result), sort_keys=True),
+        "error_type": tool_call.error.type if tool_call.error else "",
+        "error_message": tool_call.error.message if tool_call.error else "",
+        "metadata_json": json.dumps(to_jsonable(tool_call.metadata), sort_keys=True),
+    }
+
+
 def flatten_item_run(record: ItemRunRecord) -> dict[str, Any]:
     latency_s = sum(generation.latency_s for generation in record.generations)
+    tool_call_names = [call.name for call in record.tool_calls]
     return {
         "item_run_id": record.item_run_id,
         "run_id": record.run_id,
@@ -296,6 +417,8 @@ def flatten_item_run(record: ItemRunRecord) -> dict[str, Any]:
         "reasoning_tokens": record.usage.reasoning_tokens,
         "total_tokens": record.usage.total_tokens,
         "output_text": record.output.text if record.output else "",
+        "tool_call_count": len(record.tool_calls),
+        "tool_call_names_json": json.dumps(tool_call_names, sort_keys=True),
         **media_summary(record.output),
         "error_type": record.error.type if record.error else "",
         "error_message": record.error.message if record.error else "",

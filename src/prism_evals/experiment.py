@@ -9,7 +9,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from prism_evals.models import EvalDefinition, ItemRunRecord, ModelConfig
+from prism_evals.models import EvalDefinition, ItemRunRecord, ModelConfig, ModelVariant
 from prism_evals.runner import Runner
 
 WorkflowFn = Callable[..., Any]
@@ -56,6 +56,7 @@ class Experiment:
         self.metadata = metadata or {}
         self.openai_client = openai_client
         self._models: list[ModelConfig] = []
+        self._variants: list[ModelVariant] = []
         self._workflow: WorkflowFn | None = None
         self._evals: list[EvalDefinition] = []
         self._output_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") if timestamp_output_dir else None
@@ -74,6 +75,10 @@ class Experiment:
         return list(self._models)
 
     @property
+    def registered_variants(self) -> list[ModelVariant]:
+        return list(self._variants)
+
+    @property
     def registered_evals(self) -> list[EvalDefinition]:
         return list(self._evals)
 
@@ -90,7 +95,10 @@ class Experiment:
     def model(self, config: ModelConfig) -> ModelConfig:
         if any(existing.key == config.key for existing in self._models):
             raise ValueError(f"duplicate model key: {config.key}")
+        if any(existing.key == config.key for existing in self._variants):
+            raise ValueError(f"duplicate variant key: {config.key}")
         self._models.append(config)
+        self._variants.append(ModelVariant(key=config.key, models={"default": config}, default_role="default"))
         return config
 
     def models(self, configs: Iterable[ModelConfig]) -> list[ModelConfig]:
@@ -98,6 +106,32 @@ class Experiment:
         for config in configs:
             registered.append(self.model(config))
         return registered
+
+    def variant(
+        self,
+        key: str,
+        *,
+        models: dict[str, ModelConfig | str | dict[str, Any]],
+        default_role: str = "default",
+        metadata: dict[str, Any] | None = None,
+    ) -> ModelVariant:
+        if any(existing.key == key for existing in self._variants):
+            raise ValueError(f"duplicate variant key: {key}")
+        if any(existing.key == key for existing in self._models):
+            raise ValueError(f"duplicate model key: {key}")
+        normalized = normalize_variant_models(models)
+        if not normalized:
+            raise ValueError("variant must include at least one model")
+        if default_role not in normalized:
+            default_role = next(iter(normalized))
+        variant = ModelVariant(
+            key=key,
+            models=normalized,
+            default_role=default_role,
+            metadata=metadata or {},
+        )
+        self._variants.append(variant)
+        return variant
 
     def eval(
         self,
@@ -134,8 +168,8 @@ class Experiment:
             raise ValueError("display must be one of: progress, quiet, debug")
         if not self.dataset.exists():
             raise FileNotFoundError(f"dataset not found: {self.dataset}")
-        if not self._models:
-            raise ValueError("at least one model must be registered")
+        if not self._variants:
+            raise ValueError("at least one model or variant must be registered")
         if self._workflow is None:
             raise ValueError("a workflow callable must be assigned to exp.workflow")
 
@@ -150,3 +184,24 @@ class Experiment:
         if path.is_absolute():
             return path
         return (self._base_dir / path).resolve()
+
+
+def normalize_variant_models(
+    models: dict[str, ModelConfig | str | dict[str, Any]],
+) -> dict[str, ModelConfig]:
+    normalized: dict[str, ModelConfig] = {}
+    for role, value in models.items():
+        if isinstance(value, ModelConfig):
+            config = value
+            if not config.key:
+                config = config.model_copy(update={"key": role})
+        elif isinstance(value, str):
+            config = ModelConfig(key=role, model=value)
+        elif isinstance(value, dict):
+            payload = dict(value)
+            payload.setdefault("key", role)
+            config = ModelConfig(**payload)
+        else:
+            raise TypeError(f"model role {role!r} must be ModelConfig, string, or dict")
+        normalized[role] = config
+    return normalized

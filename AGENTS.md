@@ -26,8 +26,8 @@ pe init
 
 An experiment is a normal Python file that configures:
 
-- A CSV dataset.
-- One or more `ModelConfig` entries.
+- A CSV dataset, JSONL file, or folder of JSON/YAML scenario files.
+- One or more `ModelConfig` entries or named model variants.
 - A workflow callable assigned to `exp.workflow`.
 - Item-level evals registered with `exp.eval(...)`.
 - Optional step-level evals inside `ctx.step(...)`.
@@ -73,11 +73,12 @@ Common change points:
 
 - Change prompts, tool calls, multi-step logic, or response parsing in the
   workflow assigned to `exp.workflow`.
-- Change model coverage by editing `exp.model(...)` or `exp.models(...)`.
+- Change model coverage by editing `exp.model(...)`, `exp.models(...)`, or
+  `exp.variant(...)` for multi-agent role/model configurations.
 - Change pass/fail or scoring logic by editing `exp.eval(...)` or the `evals=`
   list passed to `ctx.step(...)`.
-- Change data coverage by editing the CSV dataset referenced by
-  `Experiment(dataset=...)`.
+- Change data coverage by editing the CSV/JSONL file or scenario folder
+  referenced by `Experiment(dataset=...)`.
 - Change output placement by editing `Experiment(output_dir=...)`.
 - Change resume behavior with `resume=True` or `resume=False`.
 - Change repeated sampling with `repetitions=...`.
@@ -134,6 +135,8 @@ Run directories contain:
   scores.
 - `steps.csv`: one row per recorded workflow step, including step output text,
   usage, errors, media columns, and step scores.
+- `turns.csv`: one row per recorded conversation turn.
+- `tool_calls.csv`: one row per recorded tool call.
 - `artifacts/`: optional copied prompt/rubric/schema files listed in
   `artifacts=[...]`.
 - `media/`: generated outputs saved with `ctx.media`.
@@ -179,9 +182,9 @@ records, steps, errors, usage, and media metadata.
 `resume=True` skips item/model/repetition records that already have
 `status == "success"` in the current run directory's `results.jsonl`.
 
-The item-run identity is based on experiment name, dataset hash, item id/index,
-model key, and repetition. Changing the dataset contents changes the dataset hash
-and creates different item-run IDs.
+The item-run identity is based on experiment name, dataset hash, per-item hash,
+item id/index, model or variant key, and repetition. Changing dataset contents or
+a scenario file creates different item-run IDs.
 
 For a clean rerun, launch a fresh process with `timestamp_output_dir=True`,
 change the output directory or experiment name, or delete the old generated run
@@ -189,15 +192,24 @@ directory.
 
 ## Datasets
 
-Datasets are CSV files read with a header row.
+Datasets can be CSV files, JSONL files, structured JSON/YAML scenario files, or
+folders containing one JSON/YAML scenario file per item.
 
-- Every row is passed to the workflow as `item`, a `dict[str, str]`.
+- Every item is passed to the workflow as `item`; CSV values remain strings,
+  while JSON/YAML items preserve nested lists and objects.
 - If the CSV has an `id` column, that value is used as `item_id`.
 - If `id` is missing or blank, the zero-based row index is used as `item_id`.
 - Empty CSV values are normalized to empty strings.
+- If `dataset` is a directory, Prism recursively reads `*.json`, `*.yaml`, and
+  `*.yml` files in stable path order. Files beginning with `_` are ignored.
+- Scenario turns support shorthand keys such as `user`, `assistant_seed`,
+  `assistant_expect`, and `action`.
 
 Keep dataset columns explicit and stable. Evals often use selectors such as
 `item("expected")`, so renaming columns can silently change scoring behavior.
+
+CSV can point to scenario files with `scenario_path`, or store compact turn lists
+in `turns_json`.
 
 ## Workflows And Steps
 
@@ -210,6 +222,15 @@ orchestration and output storage, not provider SDK calls.
 Use `ctx.step("step_key", callable_or_value, evals=[...])` for multi-step
 workflows. Step callables must return `TaskOutput`. Step outputs and step evals
 are written to both `results.jsonl` and the flattened CSV files.
+
+Use `ctx.conversation(...)`, `ctx.user(...)`, `ctx.assistant_seed(...)`,
+`ctx.action_seed(...)`, and `ctx.turn(...)` for multi-turn scenarios. Seeded
+turns record context only; generated turns also write a normal step with key
+`turn:<turn_id>`.
+
+Use `ctx.record_tool_call(...)` to capture app/tool invocations that matter for
+scoring. Built-ins such as `ToolCalled`, `ToolNotCalled`, and `ToolArgsEqual`
+can score those calls.
 
 Return `TaskOutput(text=..., value=..., media=[...])` for display text,
 structured data, and generated media. Built-in selectors such as `text()`,

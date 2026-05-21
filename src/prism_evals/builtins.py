@@ -344,6 +344,78 @@ class JsonPathEqual(BuiltInEvaluator):
         )
 
 
+@dataclass(frozen=True)
+class ToolCalled(BuiltInEvaluator):
+    name: str
+    turn: str | None = None
+    agent: str | None = None
+    operator = "tool_called"
+
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        calls = matching_tool_calls(ctx, name=self.name, turn=self.turn, agent=self.agent)
+        score = bool(calls)
+        return self._result(
+            score,
+            comment=None if score else f"tool {self.name!r} was not called",
+            metadata={
+                "name": self.name,
+                "turn": self.turn,
+                "agent": self.agent,
+                "matching_count": len(calls),
+                "tool_call_names": [getattr(call, "name", None) for call in all_tool_calls(ctx)],
+            },
+        )
+
+
+@dataclass(frozen=True)
+class ToolNotCalled(BuiltInEvaluator):
+    name: str
+    turn: str | None = None
+    agent: str | None = None
+    operator = "tool_not_called"
+
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        calls = matching_tool_calls(ctx, name=self.name, turn=self.turn, agent=self.agent)
+        score = not calls
+        return self._result(
+            score,
+            comment=None if score else f"tool {self.name!r} was called {len(calls)} time(s)",
+            metadata={"name": self.name, "turn": self.turn, "agent": self.agent, "matching_count": len(calls)},
+        )
+
+
+@dataclass(frozen=True)
+class ToolArgsEqual(BuiltInEvaluator):
+    name: str
+    path: str
+    expected: Any
+    turn: str | None = None
+    agent: str | None = None
+    operator = "tool_args_equal"
+
+    def __call__(self, dataset_item: dict[str, str], model: Any, output: Any, ctx: Any) -> EvalResult:
+        expected = resolve_operand(self.expected, dataset_item, model, output, ctx)
+        if not expected.ok:
+            return selector_failure(self.operator, expected)
+        calls = matching_tool_calls(ctx, name=self.name, turn=self.turn, agent=self.agent)
+        for call in calls:
+            try:
+                actual = resolve_path(tool_call_arguments(call), self.path)
+            except Exception:
+                continue
+            score = actual == expected.value
+            return self._result(
+                score,
+                comment=None if score else f"expected {short_repr(expected.value)}, got {short_repr(actual)}",
+                metadata={"name": self.name, "path": self.path, "turn": self.turn, "agent": self.agent},
+            )
+        return self._result(
+            False,
+            comment=f"no matching tool call argument path {self.path!r}",
+            metadata={"name": self.name, "path": self.path, "turn": self.turn, "agent": self.agent},
+        )
+
+
 def resolve_operand(
     operand: Any,
     dataset_item: dict[str, str],
@@ -373,6 +445,35 @@ def resolve_json_value(
         except Exception as exc:
             return Resolved(ok=False, error=f"could not parse JSON: {exc}")
     return Resolved(ok=True, value=value)
+
+
+def all_tool_calls(ctx: Any) -> list[Any]:
+    if ctx is not None and hasattr(ctx, "tool_calls"):
+        return list(getattr(ctx, "tool_calls") or [])
+    return []
+
+
+def matching_tool_calls(ctx: Any, *, name: str, turn: str | None, agent: str | None) -> list[Any]:
+    calls = []
+    for call in all_tool_calls(ctx):
+        if getattr(call, "name", None) != name:
+            continue
+        if turn is not None and getattr(call, "turn_id", None) != turn:
+            continue
+        if agent is not None and getattr(call, "agent", None) != agent:
+            continue
+        calls.append(call)
+    return calls
+
+
+def tool_call_arguments(call: Any) -> Any:
+    arguments = getattr(call, "arguments", None)
+    if isinstance(arguments, str):
+        try:
+            return json.loads(arguments)
+        except Exception:
+            return arguments
+    return arguments
 
 
 def selector_failure(operator: str, *resolved_values: Resolved) -> EvalResult:

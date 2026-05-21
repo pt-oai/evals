@@ -33,6 +33,43 @@ class ModelConfig(BaseModel):
         return value
 
 
+class ModelVariant(BaseModel):
+    key: str
+    models: dict[str, ModelConfig] = Field(default_factory=dict)
+    default_role: str = "default"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("key")
+    @classmethod
+    def key_must_not_be_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("variant key must not be empty")
+        return value
+
+    @property
+    def default_model(self) -> ModelConfig:
+        if self.default_role in self.models:
+            return self.models[self.default_role]
+        if self.models:
+            return next(iter(self.models.values()))
+        raise ValueError(f"variant {self.key!r} has no models")
+
+    @property
+    def model(self) -> str:
+        return self.default_model.model
+
+    @property
+    def params(self) -> dict[str, Any]:
+        return self.default_model.params
+
+    def model_for(self, role: str = "default") -> ModelConfig:
+        if role in self.models:
+            return self.models[role]
+        if role == "default":
+            return self.default_model
+        raise KeyError(f"variant {self.key!r} has no model role {role!r}")
+
+
 class TokenUsage(BaseModel):
     input_tokens: int = 0
     cached_tokens: int = 0
@@ -107,6 +144,37 @@ class GenerationRecord(BaseModel):
     error: ErrorRecord | None = None
 
 
+class ToolCallRecord(BaseModel):
+    name: str
+    arguments: Any | None = None
+    result: Any | None = None
+    agent: str | None = None
+    turn_id: str | None = None
+    call_id: str | None = None
+    status: Status = "success"
+    duration_s: float = 0.0
+    started_at: str | None = None
+    ended_at: str | None = None
+    error: ErrorRecord | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TurnRecord(BaseModel):
+    id: str
+    role: str
+    mode: str | None = None
+    status: Status = "success"
+    started_at: str
+    ended_at: str
+    duration_s: float = 0.0
+    input: Any | None = None
+    output: TaskOutput | None = None
+    evals: list[EvalResult] = Field(default_factory=list)
+    tool_calls: list[ToolCallRecord] = Field(default_factory=list)
+    error: ErrorRecord | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class StepRecord(BaseModel):
     key: str
     status: Status
@@ -118,6 +186,7 @@ class StepRecord(BaseModel):
     usage: TokenUsage = Field(default_factory=TokenUsage)
     response_id: str | None = None
     generations: list[GenerationRecord] = Field(default_factory=list)
+    tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     error: ErrorRecord | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -128,10 +197,11 @@ class ItemRunRecord(BaseModel):
     experiment_name: str
     item_index: int
     item_id: str
-    item: dict[str, str]
+    item: dict[str, Any]
     model_key: str
     model: str
     model_params: dict[str, Any] = Field(default_factory=dict)
+    variant_key: str | None = None
     repetition: int
     status: Status
     started_at: str
@@ -143,6 +213,8 @@ class ItemRunRecord(BaseModel):
     response_id: str | None = None
     generations: list[GenerationRecord] = Field(default_factory=list)
     steps: list[StepRecord] = Field(default_factory=list)
+    turns: list[TurnRecord] = Field(default_factory=list)
+    tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     raw_input: Any | None = None
     raw_output: Any | None = None
     error: ErrorRecord | None = None
@@ -162,6 +234,7 @@ class RunManifest(BaseModel):
     output_dir: str
     settings: dict[str, Any] = Field(default_factory=dict)
     model_configs: list[ModelConfig] = Field(default_factory=list)
+    variant_configs: list[ModelVariant] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     git_commit: str | None = None
     python_version: str | None = None
