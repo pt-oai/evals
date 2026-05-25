@@ -98,7 +98,7 @@ async def answer_return_question(item, model, ctx):
         input=(
             f"{PROMPT}\n\n"
             f"Policy:\n{POLICY}\n\n"
-            f"Customer question:\n{item['customer_message']}"
+            f"Customer question:\n{item['question']}"
         ),
     )
     answer = PolicyAnswer.model_validate_json(response.output_text)
@@ -109,10 +109,6 @@ async def answer_return_question(item, model, ctx):
     )
 
 
-def split_terms(value: str) -> list[str]:
-    return [term.strip().lower() for term in value.split("|") if term.strip()]
-
-
 def response_text(output: TaskOutput) -> str:
     if isinstance(output.value, dict):
         return str(output.value.get("response", ""))
@@ -121,47 +117,11 @@ def response_text(output: TaskOutput) -> str:
 
 def decision_exact_match(item, model, output, ctx):
     actual = output.value.get("decision") if isinstance(output.value, dict) else None
-    expected = item["expected_decision"]
+    expected = item["expected_output"]
     return EvalResult(
         score=actual == expected,
         comment=None if actual == expected else f"expected {expected}, got {actual}",
-        metadata={"expected_decision": expected, "actual_decision": actual},
-    )
-
-
-def required_terms_present(item, model, output, ctx):
-    terms = split_terms(item["required_terms"])
-    text = response_text(output).lower()
-    missing = [term for term in terms if term not in text]
-    return EvalResult(
-        score=not missing,
-        comment=None if not missing else f"missing required terms: {', '.join(missing)}",
-        metadata={"required_terms": terms, "missing_terms": missing},
-    )
-
-
-def forbidden_terms_absent(item, model, output, ctx):
-    terms = split_terms(item["forbidden_terms"])
-    text = response_text(output).lower()
-    present = [term for term in terms if term in text]
-    return EvalResult(
-        score=not present,
-        comment=None if not present else f"forbidden terms present: {', '.join(present)}",
-        metadata={"forbidden_terms": terms, "present_terms": present},
-    )
-
-
-def required_term_coverage(item, model, output, ctx):
-    terms = split_terms(item["required_terms"])
-    text = response_text(output).lower()
-    if not terms:
-        return EvalResult(score=1.0, metadata={"required_terms": [], "matched_terms": []})
-    matched = [term for term in terms if term in text]
-    score = len(matched) / len(terms)
-    return EvalResult(
-        score=score,
-        comment=f"matched {len(matched)}/{len(terms)} required terms",
-        metadata={"required_terms": terms, "matched_terms": matched},
+        metadata={"expected_output": expected, "actual_decision": actual},
     )
 
 
@@ -171,17 +131,16 @@ async def llm_policy_judge(item, model, output, ctx):
         **response_params(model, JUDGE_SCHEMA),
         input=(
             "You are grading a customer-support answer against a return policy.\n"
-            "Give 1.0 only if the answer is grounded, clear, and does not overpromise.\n"
-            "Give 0.5 for a partially useful answer with a missing caveat.\n"
+            "Give 1.0 only if the answer is grounded, clear, and matches the response explanation.\n"
+            "Give 0.5 for a partially useful answer that misses part of the expected explanation.\n"
             "Give 0.0 for an answer that contradicts the policy or guesses when it should ask for details.\n\n"
             "Caps: if the answer decision does not match the expected decision, the score must be at most 0.4.\n"
-            "If a required policy fact is missing, the score must be at most 0.7.\n"
-            "If the answer makes a forbidden promise, the score must be 0.0.\n\n"
+            "If the answer misses the main point in the response explanation, the score must be at most 0.6.\n"
+            "If the answer makes a promise the policy does not allow, the score must be 0.0.\n\n"
             f"Policy:\n{POLICY}\n\n"
-            f"Customer question:\n{item['customer_message']}\n\n"
-            f"Expected decision:\n{item['expected_decision']}\n"
-            f"Required policy facts:\n{item['required_terms']}\n"
-            f"Forbidden promises:\n{item['forbidden_terms']}\n"
+            f"Customer question:\n{item['question']}\n\n"
+            f"Expected decision:\n{item['expected_output']}\n"
+            f"Expected response explanation:\n{item['response_explanation']}\n"
             f"Answer decision:\n{output.value.get('decision') if isinstance(output.value, dict) else None}\n"
             f"Answer text:\n{response_text(output)}"
         ),
@@ -190,13 +149,10 @@ async def llm_policy_judge(item, model, output, ctx):
     return EvalResult(
         score=judge.score,
         comment=judge.reason,
-        metadata={"judge_model": model.model},
+        metadata={"judge_model": model.model, "response_explanation": item["response_explanation"]},
     )
 
 
 exp.workflow = answer_return_question
 exp.eval("decision_exact_match", decision_exact_match, description="Decision matches the expected label")
-exp.eval("required_terms_present", required_terms_present, description="Answer includes required policy facts")
-exp.eval("forbidden_terms_absent", forbidden_terms_absent, description="Answer avoids forbidden promises")
-exp.eval("required_term_coverage", required_term_coverage, description="Fraction of required policy facts included")
-exp.eval("llm_policy_judge", llm_policy_judge, description="LLM judge score for groundedness and usefulness")
+exp.eval("llm_policy_judge", llm_policy_judge, description="LLM judge score against the expected response explanation")
