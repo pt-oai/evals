@@ -4,12 +4,11 @@ from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, TaskOu
 
 
 exp = Experiment(
-    name="qa_smoke",
+    name="csv_qa",
     dataset="datasets/qa.csv",
     output_dir="runs",
     concurrency=5,
     resume=True,
-    repetitions=1,
 )
 
 exp.model(
@@ -38,4 +37,4 @@ exp.eval(
     Contains(container=text(), expected=item("expected"), case_sensitive=False),
     description="Expected answer appears",
 )
-exp.eval("brevity", LengthBetween(value=text(), max_len=200))
+exp.eval("brief_answer", LengthBetween(value=text(), max_len=200))

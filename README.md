@@ -8,7 +8,7 @@ and the primary CLI is `prism`. The short CLI alias is `pe`.
 Experiments are plain Python files. Define the dataset, models, workflow, and evals in one place, then run them with the CLI:
 
 ```bash
-prism run examples/qa_smoke.py
+prism run examples/01_csv_qa.py
 ```
 
 ## Quick Start
@@ -16,14 +16,20 @@ prism run examples/qa_smoke.py
 From the repo where you want to write and run evals:
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install "prism-evals @ git+ssh://git@github.com/pt-oai/evals.git@v0.9.0"
-prism init
-# or: prism-evals init
-# or: pe init
+python3.12 -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip prism-evals && prism init
 ```
+
+That installs the latest published Prism Evals package into `.venv`, then seeds
+Prism Evals instructions into the current repo.
+
+To install directly from the repo before a release is published:
+
+```bash
+python3.12 -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip "prism-evals @ git+ssh://git@github.com/pt-oai/evals.git" && prism init
+```
+
+The installed console scripts are equivalent, so `prism init`, `prism-evals
+init`, and `pe init` all work.
 
 Set your OpenAI API key:
 
@@ -45,13 +51,13 @@ CSV
 Create an eval:
 
 ```bash
-cat > qa_smoke.py <<'PY'
+cat > csv_qa.py <<'PY'
 from openai import AsyncOpenAI
 
 from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, TaskOutput, item, text
 
 exp = Experiment(
-    name="qa_smoke",
+    name="csv_qa",
     dataset="datasets/qa.csv",
     output_dir="runs",
     concurrency=5,
@@ -89,7 +95,7 @@ PY
 Run the eval and open the local viewer:
 
 ```bash
-prism run qa_smoke.py
+prism run csv_qa.py
 prism view runs/
 ```
 
@@ -105,6 +111,47 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
+
+## Publishing
+
+Releases are published by GitHub Actions from version tags. Before the first
+release, create a PyPI pending Trusted Publisher for this repository with:
+
+- **PyPI project name**: `prism-evals`
+- **Owner**: `pt-oai`
+- **Repository name**: `evals`
+- **Workflow name**: `publish-python.yml`
+- **Environment name**: `pypi`
+
+Then update `version` in `pyproject.toml`, commit the change, and push a tag:
+
+```bash
+git tag v0.9.0
+git push origin v0.9.0
+```
+
+The publish workflow runs tests, builds the source distribution and wheel,
+checks the package metadata, and publishes to PyPI only for `v*` tags. The
+pending publisher creates the PyPI project on first publish, then becomes the
+normal trusted publisher for future releases.
+
+## Runnable Examples
+
+The `examples/` directory is organized as a small learning path:
+
+```bash
+prism run examples/01_csv_qa.py
+prism run examples/02_json_import.py
+prism run examples/03_image_generation.py
+prism run examples/04_config_options.py
+prism run examples/05_multistep_agent.py
+```
+
+- `01_csv_qa.py`: CSV import and simple built-in evals.
+- `02_json_import.py`: one JSON file per case with nested context.
+- `03_image_generation.py`: generated image media saved with `ctx.media`.
+- `04_config_options.py`: retries, repetitions, artifacts, metadata, stable output directories, and model variants.
+- `05_multistep_agent.py`: step-level evals inside a two-step workflow.
 
 ## Terminology
 
@@ -141,7 +188,7 @@ from openai import AsyncOpenAI
 from prism_evals import Contains, Experiment, LengthBetween, ModelConfig, TaskOutput, item, text
 
 exp = Experiment(
-    name="qa_smoke",
+    name="csv_qa",
     dataset="datasets/qa.csv",
     output_dir="runs",
     concurrency=5,
@@ -175,7 +222,7 @@ exp.eval(
 exp.eval("brevity", LengthBetween(value=text(), max_len=200))
 ```
 
-Run the experiment with `prism run qa_smoke.py`. Direct `python qa_smoke.py`
+Run the experiment with `prism run csv_qa.py`. Direct `python csv_qa.py`
 execution is still supported if the file includes an explicit `exp.run()` block.
 
 ## Scenario Datasets
@@ -185,8 +232,8 @@ files:
 
 ```python
 exp = Experiment(
-    name="support_scenarios",
-    dataset="datasets/scenarios",
+    name="json_import",
+    dataset="datasets/json_cases",
     output_dir="runs",
 )
 ```
@@ -427,7 +474,7 @@ async def workflow(item, model, ctx):
 exp.workflow = workflow
 ```
 
-Responses API image generation follows the same pattern: call `client.responses.create(...)`, extract the image base64 from the response, save it with `ctx.media.from_base64(...)`, and return `TaskOutput(media=[...])`.
+Responses API image generation follows the same pattern: call `client.responses.create(...)`, extract the image base64 from the response, save it with `ctx.media.from_base64(...)`, and return `TaskOutput(media=[...])`. See `examples/03_image_generation.py` for a runnable version.
 
 ## Realtime
 
@@ -464,13 +511,6 @@ async def workflow(item, model, ctx):
         },
     )
     return result.task_output()
-```
-
-Runnable examples:
-
-```bash
-prism run examples/realtime_text_smoke.py
-prism run examples/realtime_voice_agent_smoke.py
 ```
 
 Realtime results include parsed tool calls in `TaskOutput.value`, so evals can
@@ -554,10 +594,10 @@ exp.eval("manual_score", manual_score)
 
 ## Outputs
 
-For `Experiment(name="qa_smoke", output_dir="runs")`, results are written to a timestamp-prefixed folder:
+For `Experiment(name="csv_qa", output_dir="runs")`, results are written to a timestamp-prefixed folder:
 
 ```text
-runs/20260415-143205_qa_smoke/
+runs/20260415-143205_csv_qa/
   manifest.json
   results.jsonl
   results.csv
@@ -581,7 +621,7 @@ runs/20260415-143205_qa_smoke/
 
 The final console summary includes score tables by model and by eval key, plus average per-item-run and total token usage by model for input, cached, output, reasoning, and total tokens.
 
-Set `timestamp_output_dir=False` to keep the stable `runs/qa_smoke/` folder shape.
+Set `timestamp_output_dir=False` to keep the stable `runs/csv_qa/` folder shape.
 
 ## Local Viewer
 

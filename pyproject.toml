@@ -8,6 +8,30 @@ version = "0.9.0"
 description = "Local experiment framework for OpenAI API evals."
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+  { name = "OpenAI" },
+]
+maintainers = [
+  { name = "OpenAI" },
+]
+keywords = [
+  "evals",
+  "experiments",
+  "openai",
+  "llm",
+  "testing",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Testing",
+]
 dependencies = [
   "openai[realtime]>=2.30.0",
   "pydantic>=2.7.0",
@@ -21,6 +45,12 @@ dependencies = [
 prism = "prism_evals.cli:main"
 prism-evals = "prism_evals.cli:main"
 pe = "prism_evals.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/pt-oai/evals"
+Repository = "https://github.com/pt-oai/evals"
+Issues = "https://github.com/pt-oai/evals/issues"
+Changelog = "https://github.com/pt-oai/evals/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

@@ -1,0 +1,19 @@
+{
+  "id": "rain-shell-recommendation",
+  "question": "What jacket is best for a rainy commute?",
+  "context": {
+    "products": [
+      {
+        "name": "Aero Shell",
+        "summary": "Packable waterproof shell for light rain and commuting."
+      },
+      {
+        "name": "Summit Parka",
+        "summary": "Insulated winter parka for cold, dry conditions."
+      }
+    ]
+  },
+  "expected": {
+    "answer_contains": "Aero Shell"
+  }
+}

@@ -1,0 +1,5 @@
+id,message,expected_route,expected_next_step
+billing-1,"I was charged twice for my last invoice.",billing,invoice
+shipping-1,"My package says delivered but I cannot find it.",shipping,tracking
+technical-1,"The app crashes every time I upload a file.",technical,error
+product-1,"Which backpack works best for a two-day work trip?",product,recommend

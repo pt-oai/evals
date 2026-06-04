@@ -6,13 +6,20 @@ from prism_evals import Experiment, ModelConfig, NonEmpty, TaskOutput, text
 
 
 exp = Experiment(
-    name="responses_image_smoke",
+    name="image_generation",
     dataset="datasets/image_prompts.csv",
     output_dir="runs",
     concurrency=1,
+    resume=True,
 )
 
-exp.model(ModelConfig(key="gpt5_image", model="gpt-5", params={"reasoning": {"effort": "low"}}))
+exp.model(
+    ModelConfig(
+        key="gpt5_image",
+        model="gpt-5",
+        params={"reasoning": {"effort": "low"}},
+    )
+)
 
 client = AsyncOpenAI()
 
@@ -30,8 +37,7 @@ async def generate_image(item, model, ctx):
 
 def first_image_result(response: Any) -> str:
     for output in getattr(response, "output", []) or []:
-        output_type = getattr(output, "type", None)
-        if output_type == "image_generation_call":
+        if getattr(output, "type", None) == "image_generation_call":
             result = getattr(output, "result", None)
             if isinstance(result, str):
                 return result

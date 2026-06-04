@@ -1,0 +1,19 @@
+{
+  "id": "daypack-recommendation",
+  "question": "Which bag should I choose for a day hike?",
+  "context": {
+    "products": [
+      {
+        "name": "Trailpack 20L",
+        "summary": "Light daypack with a hydration sleeve and rain cover."
+      },
+      {
+        "name": "City Tote",
+        "summary": "Commuter tote with a padded laptop sleeve."
+      }
+    ]
+  },
+  "expected": {
+    "answer_contains": "Trailpack"
+  }
+}

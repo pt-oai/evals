@@ -1,0 +1,3 @@
+id,topic,required_phrase
+cfg-1,how eval runs are resumed,resume
+cfg-2,why repeated samples can help,repetitions
