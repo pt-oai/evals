@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 This project follows Semantic Versioning. While the project is pre-1.0, minor
 versions may include API changes as the experiment framework settles.
 
+## [0.9.2] - 2026-06-06
+
+### Added
+
+- Added `Experiment.pass_condition` for combining item-level eval scores into
+  an overall item-run pass/fail result.
+- Pass-condition failures retain workflow outputs and eval scores while marking
+  the item run as failed with `PassConditionFailed`.
+
 ## [0.9.0] - 2026-05-21
 
 ### Added

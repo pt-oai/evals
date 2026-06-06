@@ -54,6 +54,8 @@ Common change points:
   `exp.variant(...)` for multi-agent role/model configurations.
 - Change pass/fail or scoring logic by editing `exp.eval(...)` or the `evals=`
   list passed to `ctx.step(...)`.
+- Set `exp.pass_condition` when item-level eval scores should determine the item
+  run's pass/fail status.
 - Change data coverage by editing the CSV/JSONL file or scenario folder
   referenced by `Experiment(dataset=...)`.
 - Change output placement by editing `Experiment(output_dir=...)`.
@@ -144,6 +146,13 @@ steps. Filter by:
 - `scope=item_run` for final-output evals.
 - `scope=step` and `step_key=<name>` for step evals.
 - `score_key=<eval>` for a specific metric.
+
+Eval scores are informational by default. A synchronous or asynchronous
+`exp.pass_condition(scores)` callable can combine item-level boolean and numeric
+scores into an overall result. A false result marks the item run as `failed`
+with `PassConditionFailed`; step-level eval scores are not included. Evaluator
+errors have a `None` score, so conditions should handle that case when
+`fail_fast=False`.
 
 Use `steps.csv` when debugging multi-step workflows. It shows each step's
 status, output text, media paths, token usage, latency, response ID, and

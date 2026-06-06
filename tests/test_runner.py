@@ -225,6 +225,53 @@ def test_workflow_object_is_supported(tmp_path, fake_client):
     assert records[0].evals[0].score is True
 
 
+def test_pass_condition_marks_item_run_failed(tmp_path, fake_client):
+    exp = make_experiment(
+        tmp_path,
+        fake_client,
+        rows=[{"id": "a", "question": "alpha", "expected": "missing"}],
+    )
+    exp.pass_condition = lambda scores: (
+        scores["contains_expected"] is True
+        and scores["brevity"] >= 0.8
+    )
+
+    records = exp.run()
+
+    assert len(records) == 2
+    assert all(record.status == "failed" for record in records)
+    assert all(record.error is not None for record in records)
+    assert all(record.error.type == "PassConditionFailed" for record in records)
+    assert all(record.error.message == "pass condition was not met" for record in records)
+    assert all(record.evals[0].score is False for record in records)
+
+
+def test_async_pass_condition_receives_scores_and_allows_success(tmp_path, fake_client):
+    exp = make_experiment(
+        tmp_path,
+        fake_client,
+        rows=[{"id": "a", "question": "alpha", "expected": "alpha"}],
+    )
+    seen_scores = []
+
+    async def pass_condition(scores):
+        seen_scores.append(scores)
+        return scores["contains_expected"] and scores["brevity"] >= 0.8
+
+    exp.pass_condition = pass_condition
+
+    records = exp.run()
+
+    assert len(records) == 2
+    assert all(record.status == "success" for record in records)
+    assert seen_scores == [
+        {"contains_expected": True, "brevity": 1.0},
+        {"contains_expected": True, "brevity": 1.0},
+    ]
+    manifest = json.loads((exp.run_dir() / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["settings"]["pass_condition"] is True
+
+
 def test_workflow_must_return_task_output(tmp_path, fake_client):
     exp = Experiment(
         name="strict_workflow",

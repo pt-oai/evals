@@ -126,8 +126,8 @@ release, create a PyPI pending Trusted Publisher for this repository with:
 Then update `version` in `pyproject.toml`, commit the change, and push a tag:
 
 ```bash
-git tag v0.9.0
-git push origin v0.9.0
+git tag v0.9.2
+git push origin v0.9.2
 ```
 
 The publish workflow runs tests, builds the source distribution and wheel,
@@ -591,6 +591,36 @@ exp.eval("contains_expected", contains_expected)
 exp.eval("quality_bundle", quality_bundle)
 exp.eval("manual_score", manual_score)
 ```
+
+## Pass Conditions
+
+By default, eval scores do not change an item run's `success` status. Set
+`exp.pass_condition` when specific item-level scores must determine whether the
+item run passes:
+
+```python
+exp.eval("correct", Equal(actual=text(), expected=item("expected")))
+exp.eval("quality", quality_judge)
+
+exp.pass_condition = lambda scores: (
+    scores["correct"] is True
+    and scores["quality"] >= 0.8
+)
+```
+
+The condition receives a dictionary mapping each item-level eval key to its
+score. Values are boolean or numeric when evaluation succeeds, and may be `None`
+when an evaluator errors. The condition may be synchronous or asynchronous. A
+false result sets the item run status to `failed` with error type
+`PassConditionFailed`, while preserving the workflow output and all eval results
+for inspection. Without a pass condition, scores remain informational and the
+existing status behavior is unchanged.
+
+Step-level eval scores are not included in this dictionary. If `resume=True`,
+item runs that fail the pass condition are retried because resume skips only
+successful records. Adding or changing a pass condition does not invalidate
+previously successful records in a stable run directory; use a fresh run
+directory for changed criteria.
 
 ## Outputs
 

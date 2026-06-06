@@ -14,6 +14,7 @@ from prism_evals.datasets import DatasetItem, dataset_sha256, load_dataset
 from prism_evals.errors import exception_to_error
 from prism_evals.evaluation import has_eval_errors, run_eval_definitions
 from prism_evals.models import (
+    ErrorRecord,
     EvalResult,
     ItemRunRecord,
     ModelConfig,
@@ -164,6 +165,12 @@ class Runner:
             evals = await self._run_evals(item, model, output, ctx)
             if exp.fail_fast and has_eval_errors(evals):
                 raise RuntimeError("item-run eval failed")
+            if not await self._passes_condition(evals):
+                status = "failed"
+                error = ErrorRecord(
+                    type="PassConditionFailed",
+                    message="pass condition was not met",
+                )
         except Exception as exc:
             status = "failed"
             error = exception_to_error(exc)
@@ -225,6 +232,16 @@ class Runner:
             ctx=ctx,
         )
 
+    async def _passes_condition(self, evals: list[EvalResult]) -> bool:
+        condition = self.experiment.pass_condition
+        if condition is None:
+            return True
+        scores = {result.key: result.score for result in evals if result.key}
+        passed = condition(scores)
+        if inspect.isawaitable(passed):
+            passed = await passed
+        return bool(passed)
+
     def _manifest(self, run_id: str) -> RunManifest:
         exp = self.experiment
         dataset_hash = dataset_sha256(exp.dataset)
@@ -243,6 +260,7 @@ class Runner:
                 "repetitions": exp.repetitions,
                 "max_retries": exp.max_retries,
                 "fail_fast": exp.fail_fast,
+                "pass_condition": exp.pass_condition is not None,
                 "capture_raw": exp.capture_raw,
                 "redact_raw_data_urls": exp.redact_raw_data_urls,
                 "timestamp_output_dir": exp.timestamp_output_dir,

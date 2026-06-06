@@ -68,6 +68,13 @@ def test_workflow_must_be_callable(tmp_path):
         exp.workflow = "not callable"
 
 
+def test_pass_condition_must_be_callable(tmp_path):
+    exp = Experiment(name="demo", dataset=write_dataset(tmp_path), output_dir=tmp_path)
+
+    with pytest.raises(TypeError, match="pass_condition must be callable"):
+        exp.pass_condition = "not callable"
+
+
 def test_task_output_serializes_text_value_media():
     output = TaskOutput(
         text="hello",

@@ -14,6 +14,7 @@ from prism_evals.runner import Runner
 
 WorkflowFn = Callable[..., Any]
 EvalFn = Callable[..., Any]
+PassConditionFn = Callable[[dict[str, Any]], Any]
 
 
 class Experiment:
@@ -59,6 +60,7 @@ class Experiment:
         self._variants: list[ModelVariant] = []
         self._workflow: WorkflowFn | None = None
         self._evals: list[EvalDefinition] = []
+        self._pass_condition: PassConditionFn | None = None
         self._output_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") if timestamp_output_dir else None
         self._run_dir: Path | None = None
 
@@ -91,6 +93,16 @@ class Experiment:
         if func is not None and not callable(func):
             raise TypeError("workflow must be callable")
         self._workflow = func
+
+    @property
+    def pass_condition(self) -> PassConditionFn | None:
+        return self._pass_condition
+
+    @pass_condition.setter
+    def pass_condition(self, func: PassConditionFn | None) -> None:
+        if func is not None and not callable(func):
+            raise TypeError("pass_condition must be callable")
+        self._pass_condition = func
 
     def model(self, config: ModelConfig) -> ModelConfig:
         if any(existing.key == config.key for existing in self._models):
